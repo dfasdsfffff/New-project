@@ -1,3 +1,6 @@
+//! @file Template.cpp 模板引擎实现，支持变量插值 {{ }}、条件语句 {% if %}、循环 {% for %} 和过滤器
+//! 语法风格类似 Jinja2/Django 模板
+
 #include "cppwordkit/Template.hpp"
 
 #include <algorithm>
@@ -8,6 +11,7 @@
 #include <utility>
 
 namespace cppwordkit {
+//! @namespace cppwordkit 包含模板引擎、OOXML 文档操作等类型
 namespace {
 
 std::string trim(std::string_view value) {
@@ -26,6 +30,7 @@ bool startsWith(std::string_view value, std::string_view prefix) {
     return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
 }
 
+// 按指定分隔符拆分字符串，并对每部分做 trim
 std::vector<std::string> split(std::string_view value, char delimiter) {
     std::vector<std::string> result;
     std::size_t start = 0;
@@ -41,6 +46,7 @@ std::vector<std::string> split(std::string_view value, char delimiter) {
     return result;
 }
 
+// 按管道符 | 拆分过滤器链，同时处理引号和括号内的 | 不被拆分
 std::vector<std::string> splitFilters(std::string_view value) {
     std::vector<std::string> result;
     std::string current;
@@ -68,6 +74,7 @@ std::vector<std::string> splitFilters(std::string_view value) {
     return result;
 }
 
+// 以下 lowerAscii / upperAscii / capitalizeAscii / titleAscii 为内置字符串过滤器
 std::string lowerAscii(std::string value) {
     std::ranges::transform(value, value.begin(), [](unsigned char ch) {
         return static_cast<char>(std::tolower(ch));
@@ -91,6 +98,7 @@ std::string capitalizeAscii(std::string value) {
     return value;
 }
 
+// 将字符串转为标题格式（每个单词首字母大写，分隔符为空格/下划线/连字符）
 std::string titleAscii(std::string value) {
     bool nextUpper = true;
     for (auto& ch : value) {
@@ -106,6 +114,7 @@ std::string titleAscii(std::string value) {
     return value;
 }
 
+// XML 转义五个预定义实体
 std::string xmlEscape(std::string_view value) {
     std::string escaped;
     escaped.reserve(value.size());
@@ -134,6 +143,7 @@ std::string xmlEscape(std::string_view value) {
     return escaped;
 }
 
+// 去除首尾引号（用于解析过滤器参数中的字符串字面量）
 std::string unquote(std::string_view value) {
     const auto trimmed = trim(value);
     if (trimmed.size() >= 2 &&
@@ -144,6 +154,7 @@ std::string unquote(std::string_view value) {
     return trimmed;
 }
 
+// 解析函数/过滤器的参数列表（逗号分隔，处理引号和括号嵌套）
 std::vector<std::string> parseArguments(std::string_view value) {
     std::vector<std::string> args;
     std::string current;
@@ -173,10 +184,11 @@ std::vector<std::string> parseArguments(std::string_view value) {
     return args;
 }
 
+// 模板表达式的求值结果：可能来自上下文中的 TemplateValue 引用，也可能是字面量或缺失值
 struct EvalValue {
-    const TemplateValue* ref{};
-    std::string scalar;
-    bool missing = true;
+    const TemplateValue* ref{};  //!< 上下文中的变量引用，nullptr 表示字面量
+    std::string scalar;          //!< 字面量字符串值
+    bool missing = true;         //!< 模板变量是否在上下文中未声明
 
     [[nodiscard]] bool truthy() const {
         if (ref != nullptr) {
@@ -203,6 +215,7 @@ struct EvalValue {
     }
 };
 
+// 在上下文（多层嵌套对象）中按点号路径查找变量，如 "user.address.city"
 const TemplateValue* findInContext(const TemplateContext& context, std::string_view path) {
     const auto parts = split(path, '.');
     if (parts.empty() || parts.front().empty()) {
@@ -224,6 +237,7 @@ const TemplateValue* findInContext(const TemplateContext& context, std::string_v
     return current;
 }
 
+// 对模板表达式求值：支持字符串字面量、布尔字面量和路径变量
 EvalValue evaluatePath(std::string_view expression, const TemplateContext& context) {
     const auto path = trim(expression);
     if (path.empty()) {
@@ -245,6 +259,7 @@ EvalValue evaluatePath(std::string_view expression, const TemplateContext& conte
     return {value, {}, false};
 }
 
+// 提取模板表达式中使用的根变量名（去除过滤器、点号路径、not 前缀等）
 std::string rootVariable(std::string_view expression) {
     auto root = trim(split(expression, '|').front());
     if (startsWith(root, "not ")) {
@@ -263,6 +278,7 @@ std::string rootVariable(std::string_view expression) {
 
 std::string filterName(std::string_view filter);
 
+// 检查过滤器链中是否包含 default 过滤器
 bool hasDefaultFilter(std::string_view expression) {
     const auto filters = splitFilters(expression);
     for (std::size_t i = 1; i < filters.size(); ++i) {
@@ -273,12 +289,14 @@ bool hasDefaultFilter(std::string_view expression) {
     return false;
 }
 
+// 提取过滤器名称（去掉参数部分）
 std::string filterName(std::string_view filter) {
     const auto trimmed = trim(filter);
     const auto open = trimmed.find('(');
     return open == std::string::npos ? trimmed : trim(std::string_view(trimmed).substr(0, open));
 }
 
+// 提取过滤器参数列表
 std::vector<std::string> filterArgs(std::string_view filter) {
     const auto trimmed = trim(filter);
     const auto open = trimmed.find('(');
@@ -292,6 +310,8 @@ std::vector<std::string> filterArgs(std::string_view filter) {
     return parseArguments(std::string_view(trimmed).substr(open + 1, close - open - 1));
 }
 
+// 应用单个过滤器到渲染结果上
+// original 保留原始值引用，部分过滤器（如 length、join）需要访问原始数据结构
 std::string applyFilter(
     std::string rendered,
     const EvalValue& original,
@@ -360,6 +380,8 @@ std::string applyFilter(
     throw WordProcessingException("Unsupported template filter: " + name);
 }
 
+// 计算模板表达式：先求值路径，再依次应用过滤器链
+// 根据 options.autoEscape 决定是否自动做 XML 转义
 std::string evaluateExpression(
     std::string_view expression,
     const TemplateContext& context,
@@ -428,6 +450,8 @@ struct Token {
     std::size_t position{};
 };
 
+// 规范化语句标签：去除段落(p)/行(tr)/单元格(tc)/run(r)级别的标签前缀
+// DocxTemplate 的结构标签使用 {%p if cond %} 形式标记段落级条件
 std::string normalizeStatement(std::string value) {
     value = trim(value);
     if (value.size() >= 2 &&
@@ -447,6 +471,7 @@ std::string normalizeStatement(std::string value) {
     return value;
 }
 
+// 模板词法分析：将模板文本拆分为 Text / Variable({{ }}) / Statement({% %}) / Comment({# #}) 四种 Token
 std::vector<Token> lex(std::string_view text) {
     std::vector<Token> tokens;
     std::size_t cursor = 0;
@@ -481,6 +506,7 @@ std::vector<Token> lex(std::string_view text) {
     return tokens;
 }
 
+// 模板 AST 节点，支持文本、变量插值、条件(if/elif/else)和循环(for)四种类型
 struct Node {
     enum class Kind {
         Text,
@@ -491,14 +517,15 @@ struct Node {
 
     Kind kind{};
     std::string value;
-    std::string loopVariable;
-    std::vector<Node> children;
-    std::vector<std::pair<std::string, std::vector<Node>>> elifBranches;
-    std::vector<Node> elseChildren;
+    std::string loopVariable;           //!< for 循环的循环变量名
+    std::vector<Node> children;         //!< 子节点（if/for 块内的内容）
+    std::vector<std::pair<std::string, std::vector<Node>>> elifBranches;  //!< elif 分支列表
+    std::vector<Node> elseChildren;     //!< else 分支
 };
 
 std::vector<Node> parseNodes(const std::vector<Token>& tokens, std::size_t& index, const std::set<std::string>& terminators);
 
+// 解析 {% if %} 块，支持 elif 和 else
 Node parseIf(const std::vector<Token>& tokens, std::size_t& index) {
     Node node;
     node.kind = Node::Kind::If;
@@ -521,6 +548,7 @@ Node parseIf(const std::vector<Token>& tokens, std::size_t& index) {
     return node;
 }
 
+// 解析 {% for item in items %} 块，提取循环变量名和集合表达式
 Node parseFor(const std::vector<Token>& tokens, std::size_t& index) {
     Node node;
     node.kind = Node::Kind::For;
@@ -569,6 +597,7 @@ std::vector<Node> parseNodes(const std::vector<Token>& tokens, std::size_t& inde
     return nodes;
 }
 
+// 模板文本的完整解析入口：先词法分析，再递归解析为 AST
 std::vector<Node> parseTemplate(std::string_view text) {
     const auto tokens = lex(text);
     std::size_t index = 0;
@@ -579,6 +608,7 @@ std::vector<Node> parseTemplate(std::string_view text) {
     return nodes;
 }
 
+// 收集模板中所有使用到的变量（排除局部变量如循环变量和 loop 对象）
 void collectVariables(const std::vector<Node>& nodes, std::set<std::string>& out, const std::set<std::string>& locals = {}) {
     for (const auto& node : nodes) {
         if (node.kind == Node::Kind::Variable) {
@@ -640,6 +670,7 @@ std::string renderNodes(
                     output += renderNodes(node.elseChildren, context, options, usedVariables);
                 }
             }
+        // for 循环渲染：遍历数组，为每次迭代创建包含循环变量和 loop 对象（index/index0/first/last）的独立作用域
         } else if (node.kind == Node::Kind::For) {
             usedVariables.insert(rootVariable(node.value));
             const auto collection = evaluatePath(node.value, context);
@@ -698,6 +729,7 @@ bool TemplateValue::isObject() const noexcept {
     return type_ == Type::Object;
 }
 
+// 判断模板值的"真值"：字符串非空、布尔为 true、整数非零、浮点数非零、数组/对象非空
 bool TemplateValue::isTruthy() const {
     switch (type_) {
     case Type::Null:
@@ -718,6 +750,7 @@ bool TemplateValue::isTruthy() const {
     return false;
 }
 
+// 将模板值转为字符串（数组和对象不可直接转标量文本，会抛出异常）
 std::string TemplateValue::toString() const {
     switch (type_) {
     case Type::Null:
@@ -741,6 +774,7 @@ std::string TemplateValue::toString() const {
     return {};
 }
 
+// 在 Object 中按属性名查找子值
 const TemplateValue* TemplateValue::find(std::string_view path) const {
     if (type_ != Type::Object || object_ == nullptr) {
         return nullptr;
@@ -766,6 +800,7 @@ const TemplateValue::Object& TemplateValue::asObject() const {
     return *object_;
 }
 
+// 返回值的"大小"：字符串长度、基本类型为 1、数组/对象的元素个数
 std::size_t TemplateValue::size() const {
     switch (type_) {
     case Type::Null:
@@ -800,12 +835,14 @@ TemplateRenderResult TemplateEngine::renderText(
     return result;
 }
 
+// 提取模板文本中用到的所有变量名
 std::set<std::string> TemplateEngine::variables(std::string_view text) {
     std::set<std::string> result;
     collectVariables(parseTemplate(text), result);
     return result;
 }
 
+// 找出在 context 中未声明的变量（用于诊断和严格模式校验）
 std::set<std::string> TemplateEngine::undeclaredVariables(std::string_view text, const TemplateContext& context) {
     std::set<std::string> result;
     for (const auto& variable : variables(text)) {
@@ -816,10 +853,12 @@ std::set<std::string> TemplateEngine::undeclaredVariables(std::string_view text,
     return result;
 }
 
+// 尝试验证模板语法是否有效（若解析失败则抛出异常）
 void TemplateEngine::validateText(std::string_view text) {
     (void)parseTemplate(text);
 }
 
+// 模板诊断：收集语法错误和未声明变量
 TemplateDiagnostics TemplateEngine::diagnostics(std::string_view text, const TemplateContext& context) {
     TemplateDiagnostics result;
     try {

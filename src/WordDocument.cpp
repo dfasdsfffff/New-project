@@ -1,3 +1,5 @@
+//! @file WordDocument.cpp Word 文档操作实现：段落/文本编辑、表格操作、图像插入、文本替换与模板渲染
+
 #include "cppwordkit/WordDocument.hpp"
 
 #include "Detail.hpp"
@@ -15,19 +17,25 @@
 namespace cppwordkit {
 namespace {
 
+// 主文档在 OOXML 包中的固定路径
 constexpr const char* mainDocumentPath = "word/document.xml";
+// 图像关系的固定类型 URI
 constexpr const char* imageRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
+// XPath 索引从 1 开始，辅助函数将 0-based 转为 1-based
 std::string xPathIndex(std::size_t index) {
     return std::to_string(index + 1);
 }
 
+// 前置声明
 std::string makeInlineImageRunXml(std::string_view relationshipId, const ImageOptions& options);
 
+// XPath: 定位第 tableIndex 个表格
 std::string tableXPath(std::size_t tableIndex) {
     return "(//w:tbl)[" + xPathIndex(tableIndex) + "]";
 }
 
+// XPath: 定位表格中的指定单元格
 std::string cellXPath(std::size_t tableIndex, std::size_t rowIndex, std::size_t cellIndex) {
     return tableXPath(tableIndex) +
         "/w:tr[" + xPathIndex(rowIndex) + "]" +
@@ -40,6 +48,7 @@ void ensureTableIndex(std::size_t tableIndex, std::size_t tableCount) {
     }
 }
 
+// 规范化占位符格式：如果已经是 {{...}} 格式则原样返回，否则补全
 std::string normalizePlaceholder(std::string_view placeholder) {
     if (placeholder.empty()) {
         throw WordException("Placeholder must not be empty");
@@ -54,6 +63,7 @@ std::string normalizePlaceholder(std::string_view placeholder) {
     return "{{" + std::string(placeholder) + "}}";
 }
 
+// XML 文本内容转义（五个预定义实体）
 std::string xmlEscape(std::string_view value) {
     std::string escaped;
     escaped.reserve(value.size());
@@ -82,6 +92,7 @@ std::string xmlEscape(std::string_view value) {
     return escaped;
 }
 
+// XML 属性值转义（复用文本转义逻辑，因五个实体的规则一致）
 std::string xmlAttributeEscape(std::string_view value) {
     return xmlEscape(value);
 }
@@ -112,6 +123,7 @@ std::string lineRuleToXml(LineSpacingRule rule) {
     return "auto";
 }
 
+// 构建 w:rPr（run 属性）的 XML 片段，参数不生效时不输出任何内容
 void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
     if (!style.fontFamily &&
         !style.colorHex &&
@@ -140,6 +152,7 @@ void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
     if (style.fontSizeHalfPoints) {
         xml << "<w:sz w:val=\"" << *style.fontSizeHalfPoints << "\"/>";
     }
+    // 以下粗体/斜体等 toggle 属性：val="0" 表示关闭，不写 val 或 val="1" 表示开启
     if (style.bold) {
         xml << "<w:b";
         if (!*style.bold) {
@@ -271,6 +284,7 @@ std::string tableXml(const Table& table) {
     return xml.str();
 }
 
+// 根据 DocumentModel 生成完整的 word/document.xml 字符串
 std::string documentXmlFromModel(const DocumentModel& model) {
     std::ostringstream xml;
     xml << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -290,6 +304,7 @@ std::string documentXmlFromModel(const DocumentModel& model) {
     return xml.str();
 }
 
+// 将媒体部件的内部路径转为关系文件中的 target（去掉 "word/" 前缀）
 std::string mediaRelationshipTarget(const std::string& mediaPartName) {
     constexpr std::string_view prefix = "word/";
     if (mediaPartName.rfind(prefix, 0) == 0) {
@@ -298,6 +313,7 @@ std::string mediaRelationshipTarget(const std::string& mediaPartName) {
     return mediaPartName;
 }
 
+// 将关系文件中的 target 转为媒体部件的内部路径（补上 "word/" 前缀）
 std::string mediaPartNameFromRelationshipTarget(std::string target) {
     constexpr std::string_view prefix = "word/";
     if (target.rfind(prefix, 0) == 0) {
@@ -353,10 +369,11 @@ std::string makeInlineImageRunXml(
 
 } // namespace
 
+// WordDocument 的 PIMPL 实现
 struct WordDocument::Impl {
-    Path sourcePath;
-    OpenXmlPackage package;
-    bool open = false;
+    Path sourcePath;          //!< 文档的原始文件路径
+    OpenXmlPackage package;   //!< 底层的 OOXML 包
+    bool open = false;        //!< 文档是否已成功打开
 };
 
 WordDocument::WordDocument() : impl_(std::make_unique<Impl>()) {}
@@ -406,6 +423,7 @@ Path WordDocument::path() const {
     return impl_->sourcePath;
 }
 
+//! 获取主文档正文所有文本的拼接结果（不含 XML 标签）
 std::string WordDocument::text() const {
     const auto runs = mainDocumentPart().textsByXPath("//w:t");
     std::ostringstream output;
@@ -428,6 +446,8 @@ std::vector<TextRun> WordDocument::textRuns() const {
     return runs;
 }
 
+//! 读取文档的完整结构模型：段落（含样式、文本、内联图像）和表格
+//! 通过 XPath 逐一解析每个段落/run 的文本、样式和嵌入图片信息
 DocumentModel WordDocument::model() const {
     DocumentModel documentModel;
     const auto topLevelParagraphCount = paragraphCount();
@@ -506,6 +526,7 @@ DocumentModel WordDocument::model() const {
     return documentModel;
 }
 
+//! 用新模型替换文档正文内容（整体替换，段落/表格/样式全部重新生成）
 void WordDocument::replaceBody(const DocumentModel& documentModel) {
     mainDocumentPart() = XmlPart::fromString(documentXmlFromModel(documentModel));
 }
@@ -570,10 +591,12 @@ ParagraphStyle WordDocument::paragraphStyle(std::size_t paragraphIndex) const {
     return mainDocumentPart().paragraphStyle(paragraphIndex);
 }
 
+//! 用值替换文档中的占位符（自动补全 {{}} 格式），支持跨 w:t 节点的占位符
 bool WordDocument::ReplaceText(const std::string& placeholder, const std::string& value) {
     return mainDocumentPart().replaceWordText(normalizePlaceholder(placeholder), value);
 }
 
+//! 批量执行占位符替换（映射表版本）
 std::size_t WordDocument::ReplaceText(const std::map<std::string, std::string>& replacements) {
     std::size_t changedPatterns = 0;
     for (const auto& [placeholder, value] : replacements) {
@@ -584,6 +607,8 @@ std::size_t WordDocument::ReplaceText(const std::map<std::string, std::string>& 
     return changedPatterns;
 }
 
+//! 通用的文本替换方法，支持区分大小写和全词匹配
+//! 非全词模式使用跨 w:t 节点的 replaceWordText，全词模式在单个 w:t 节点内操作
 bool WordDocument::replaceText(
     std::string_view search,
     std::string_view replacement,
@@ -666,10 +691,13 @@ void WordDocument::fillFirstTable(const TableData& data) {
     fillTable(0, data);
 }
 
+//! 在书签处插入表格行：深拷贝包含书签的行模板，填充数据后依次插入
 std::size_t WordDocument::insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows) {
     return mainDocumentPart().insertTableRowsAtBookmark(bookmark, rows);
 }
 
+//! 向文档添加图像：将图像文件复制到 OOXML 包中，同时添加文档关系
+//! @return ImageId 包含 relationshipId 和部件路径
 ImageId WordDocument::addImage(const Path& imagePath) {
     const auto mediaPartName = impl_->package.addImagePart(imagePath);
     const auto relationshipId = impl_->package.addMainDocumentRelationship(
@@ -710,6 +738,7 @@ void WordDocument::insertImage(
     replaceBody(documentModel);
 }
 
+//! 在占位符位置插入图像：自动添加图像到包中，构建内联图像 XML 替换占位符文本
 bool WordDocument::insertImageAtPlaceholder(
     std::string_view placeholder,
     const Path& imagePath,

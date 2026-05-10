@@ -1,3 +1,5 @@
+//! @file DocxTemplate.cpp 基于模板引擎的 Word 文档渲染，支持段落/行级结构标签（{%p if %}、{%tr for %}）和行内变量插值
+
 #include "cppwordkit/DocxTemplate.hpp"
 
 #include "cppwordkit/Error.hpp"
@@ -33,12 +35,14 @@ std::string trim(std::string_view value) {
     return {begin, end};
 }
 
+// 判断部件是否支持模板渲染：仅文档正文（document.xml）和页眉/页脚参与模板处理
 bool isTemplateRenderablePart(std::string_view partName) {
     return partName == "word/document.xml" ||
         (startsWith(partName, "word/header") && endsWith(partName, ".xml")) ||
         (startsWith(partName, "word/footer") && endsWith(partName, ".xml"));
 }
 
+// 提取部件中所有 w:t 文本节点的拼接结果（不含 XML 标签）
 std::string wordText(const XmlPart& part) {
     const auto texts = part.textsByXPath("//w:t");
     std::ostringstream output;
@@ -48,6 +52,7 @@ std::string wordText(const XmlPart& part) {
     return output.str();
 }
 
+// 在 context 中按路径查找变量（简化版，不含过滤器支持）
 const TemplateValue* findInContext(const TemplateContext& context, std::string_view path) {
     std::size_t start = 0;
     const TemplateValue* current = nullptr;
@@ -77,6 +82,7 @@ const TemplateValue* findInContext(const TemplateContext& context, std::string_v
     return current;
 }
 
+// 对模板条件表达式求值（仅支持 not 前缀和简单的真值判断）
 bool conditionTruthy(std::string_view expression, const TemplateContext& context) {
     auto expr = trim(expression);
     if (startsWith(expr, "not ")) {
@@ -114,6 +120,7 @@ std::string xmlEscape(std::string_view value) {
     return escaped;
 }
 
+// 在 w:t 文本节点内执行模板变量渲染（找到 <w:t> 内容并用渲染结果替换）
 std::string renderTextNodes(std::string xml, const TemplateContext& context) {
     std::size_t cursor = 0;
     while ((cursor = xml.find("<w:t", cursor)) != std::string::npos) {
@@ -145,6 +152,7 @@ struct ElementSpan {
     std::string xml;
 };
 
+// 收集 XML 中所有指定 w:tagName 元素的开始-结束位置区间
 std::vector<ElementSpan> collectElements(const std::string& xml, std::string_view tagName) {
     std::vector<ElementSpan> elements;
     const auto openNeedle = "<w:" + std::string(tagName);
@@ -162,6 +170,7 @@ std::vector<ElementSpan> collectElements(const std::string& xml, std::string_vie
     return elements;
 }
 
+// 从元素的 XML 中提取结构标签语句（如 {%tr for item in items %} 中的 "for item in items"）
 std::string extractStructureStatement(std::string_view xml, std::string_view marker) {
     const auto openNeedle = "{%" + std::string(marker);
     const auto open = xml.find(openNeedle);
@@ -205,6 +214,7 @@ std::size_t findMatchingEnd(
     throw WordProcessingException("Unclosed docxtpl structure block: " + std::string(beginKeyword));
 }
 
+// 渲染 for 块：对集合中的每个元素创建子作用域并渲染循环体 XML
 std::string renderForBlock(
     std::string_view statement,
     std::string_view bodyXml,
@@ -238,6 +248,7 @@ std::string renderForBlock(
     return result;
 }
 
+// 处理指定标签级别（tr/p）的结构块：查找 {%for%} 和 {%if%} 标签，渲染后替换对应的 XML
 std::string processStructuredBlocks(
     const std::string& xml,
     std::string_view tagName,
@@ -282,6 +293,7 @@ std::string processStructuredBlocks(
     return result;
 }
 
+// 移除行内结构标签的标记文本（{%p %}、{%tr %}、{%tc %}、{%r %}），这些标记在渲染后不再需要
 std::string removeInlineStructureTags(std::string xml) {
     for (const std::string marker : {"p", "tr", "tc", "r"}) {
         std::size_t cursor = 0;
@@ -297,6 +309,7 @@ std::string removeInlineStructureTags(std::string xml) {
     return xml;
 }
 
+// 模板渲染主流程：先处理行级（tr）块，再处理段落级（p）块，最后清除行内标签标记
 std::string renderPartXml(const std::string& xml, const TemplateContext& context) {
     auto rendered = processStructuredBlocks(xml, "tr", "tr", context);
     rendered = processStructuredBlocks(rendered, "p", "p", context);
@@ -393,10 +406,12 @@ DocxTemplate::DocxTemplate() = default;
 DocxTemplate::DocxTemplate(WordDocument document)
     : document_(std::move(document)) {}
 
+//! 从文件路径打开文档并创建模板对象
 DocxTemplate DocxTemplate::open(const Path& path) {
     return DocxTemplate(WordDocument::open(path));
 }
 
+//! 执行模板渲染：先校验变量完整性，再对文档的所有可渲染部件（正文/页眉/页脚）执行渲染
 void DocxTemplate::render(const TemplateContext& context) {
     validateTemplate(context);
     renderDocument(document_, context);
@@ -414,6 +429,7 @@ std::set<std::string> DocxTemplate::getUndeclaredTemplateVariables(const Templat
     return undeclaredVariables(const_cast<WordDocument&>(document_), context);
 }
 
+//! 校验模板：确保所有用到的变量在 context 中都有声明，且模板语法正确
 void DocxTemplate::validateTemplate(const TemplateContext& context) const {
     validateDocument(const_cast<WordDocument&>(document_), context);
 }
@@ -426,6 +442,7 @@ const WordDocument& DocxTemplate::document() const noexcept {
     return document_;
 }
 
+//! 在 WordDocument 上直接执行模板渲染（便捷方法）
 void WordDocument::render(const TemplateContext& context) {
     validateDocument(*this, context);
     renderDocument(*this, context);

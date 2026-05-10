@@ -1,3 +1,5 @@
+//! @file QtDocumentMapper.cpp 模型双向映射器实现
+
 #include "QtDocumentMapper.hpp"
 #include "ImageStore.hpp"
 
@@ -13,6 +15,10 @@ QtDocumentMapper::QtDocumentMapper(ImageStore& imageStore)
 {
 }
 
+/**
+ * 将 cppwordkit 字体样式映射为 QTextCharFormat
+ * 覆盖字体、字号（half-points -> point）、粗体、斜体、下划线、删除线、上下标、前景/背景色
+ */
 QTextCharFormat QtDocumentMapper::mapTextStyle(const cppwordkit::TextStyle& style) const
 {
     QTextCharFormat fmt;
@@ -51,6 +57,10 @@ QTextCharFormat QtDocumentMapper::mapTextStyle(const cppwordkit::TextStyle& styl
     return fmt;
 }
 
+/**
+ * 将 cppwordkit 段落样式映射为 QTextBlockFormat
+ * 对齐方式、段前/段后间距、左/右缩进、首行缩进（twips -> points 换算）
+ */
 QTextBlockFormat QtDocumentMapper::mapParagraphStyle(const cppwordkit::ParagraphStyle& style) const
 {
     QTextBlockFormat fmt;
@@ -98,6 +108,10 @@ qreal QtDocumentMapper::halfPointsToFontSize(std::int32_t halfPoints) const
     return halfPoints / 2.0;
 }
 
+/**
+ * 从 cppwordkit::DocumentModel 导入到 QTextDocument
+ * 处理段落（含文本和图片 run）、表格的完整导入流程
+ */
 void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::DocumentModel& model, const cppwordkit::WordDocument& wordDoc)
 {
     doc.clear();
@@ -106,7 +120,9 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
 
     bool first = true;
 
+    // 逐段落导入
     for (const auto& para : model.paragraphs) {
+        // 除第一个段落外，每个段落前插入换块
         if (!first) {
             cursor.insertBlock();
         }
@@ -115,12 +131,15 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
         QTextBlockFormat blockFmt = mapParagraphStyle(para.style);
         cursor.setBlockFormat(blockFmt);
 
+        // 逐 run 导入，每个 run 可能包含文本和图片
         for (const auto& run : para.runs) {
             QTextCharFormat charFmt = mapTextStyle(run.style);
 
+            // 处理 run 中的内联图片
             for (const auto& img : run.images) {
                 auto rawData = wordDoc.rawPart(img.image.partName);
                 if (rawData) {
+                    // 从 partName 推断图片格式
                     QString format = "png";
                     auto dotPos = img.image.partName.rfind('.');
                     if (dotPos != std::string::npos) {
@@ -130,6 +149,7 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
                                        static_cast<int>(rawData->size()));
                     QString resourceName = imageStore_.addImage(imgBytes, format);
                     if (!resourceName.isEmpty()) {
+                        // EMU（English Metric Units）到 points 的换算：1pt = 9144 EMU
                         QTextImageFormat imgFmt;
                         imgFmt.setName(resourceName);
                         imgFmt.setWidth(img.options.widthEmu / 9144.0);
@@ -139,12 +159,14 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
                 }
             }
 
+            // 插入 run 的文本内容
             if (!run.text.empty()) {
                 cursor.insertText(QString::fromStdString(run.text), charFmt);
             }
         }
     }
 
+    // 导入表格
     for (const auto& tableModel : model.tables) {
         if (tableModel.rows.empty()) continue;
 
@@ -164,6 +186,7 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
 
         QTextTable* table = cursor.insertTable(numRows, numCols, tableFmt);
 
+        // 逐单元格填充文本内容
         for (int r = 0; r < numRows; ++r) {
             for (int c = 0; c < numCols; ++c) {
                 QTextTableCell cell = table->cellAt(r, c);
@@ -175,23 +198,31 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
             }
         }
 
+        // 将光标移到文档末尾，以便后续内容继续
         cursor.setPosition(doc.rootFrame()->lastPosition());
     }
 
+    // 将所有图片注册为 QTextDocument 的资源，使 QTextEdit 能正确渲染
     imageStore_.addImagesToDocument(doc);
 }
 
+/**
+ * 从 QTextDocument 导出为 cppwordkit::DocumentModel
+ * 遍历文档的帧结构（rootFrame），识别段落和表格并还原为模型数据
+ */
 cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc, cppwordkit::WordDocument& wordDoc)
 {
     cppwordkit::DocumentModel model;
     QTextFrame* rootFrame = doc.rootFrame();
     if (!rootFrame) return model;
 
+    // 遍历文档根帧的所有子元素：区分表格（QTextFrame 子类）和普通段落
     for (auto it = rootFrame->begin(); it != rootFrame->end(); ++it) {
         QTextBlock block = it.currentBlock();
         QTextFrame* childFrame = it.currentFrame();
 
         if (childFrame) {
+            // 处理表格：遍历行和列，提取单元格文本
             QTextTable* table = qobject_cast<QTextTable*>(childFrame);
             if (table) {
                 cppwordkit::TableData tableData;
@@ -215,6 +246,7 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                 model.tables.push_back(cppwordkit::Table{std::move(tableData)});
             }
         } else if (block.isValid()) {
+            // 处理段落：提取段落样式后遍历文本片段
             cppwordkit::Paragraph para;
             para.style = extractParagraphStyle(block.blockFormat());
 
@@ -227,12 +259,14 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
 
                 QTextCharFormat fragFmt = fragment.charFormat();
 
+                // 如果是图片片段，将图片数据写入 WordDocument 并记录 InlineImage
                 if (fragFmt.isImageFormat()) {
                     QTextImageFormat imgFmt = fragFmt.toImageFormat();
                     QString resourceName = imgFmt.name();
 
                     QByteArray imgData = imageStore_.imageData(resourceName);
                     if (!imgData.isEmpty()) {
+                        // 将图片数据写入临时文件，通过 cppwordkit 的 addImage 导入
                         QTemporaryFile* tempFile = new QTemporaryFile(
                             QDir::temp().filePath("cppwordkit_img_XXXXXX.png"));
                         tempFile->setAutoRemove(true);
@@ -245,6 +279,7 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                             auto imageId = wordDoc.addImage(
                                 tempFile->fileName().toStdString());
 
+                            // EMU 换算：若 Qt 端记录了宽高则转换为 EMU，否则使用默认值
                             cppwordkit::ImageOptions opts;
                             if (imgFmt.width() > 0) {
                                 opts.widthEmu = static_cast<std::int64_t>(imgFmt.width() * 9144.0);
@@ -260,7 +295,7 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
 
                             currentRun.images.push_back(std::move(inlineImg));
                         } catch (const std::exception&) {
-                            // Skip images we can't add
+                            // 图片添加失败时静默跳过
                         }
 
                         delete tempFile;
@@ -268,6 +303,7 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                     continue;
                 }
 
+                // 合并连续同格式的文本片段：格式不变则追加文本，否则新建 Run
                 if (currentRun.text.empty()) {
                     currentRun.style = extractTextStyle(fragFmt);
                     currentRun.text = fragment.text().toStdString();
@@ -285,10 +321,12 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                 }
             }
 
+            // 提交最后一个 Run
             if (!currentRun.text.empty() || !currentRun.images.empty()) {
                 para.runs.push_back(std::move(currentRun));
             }
 
+            // 空段落至少需要一个空的 Run，以保证段落结构完整
             if (para.runs.empty()) {
                 cppwordkit::Run emptyRun;
                 emptyRun.text = "";
@@ -302,6 +340,10 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
     return model;
 }
 
+/**
+ * 从 QTextCharFormat 提取 cppwordkit 字体样式
+ * 与 mapTextStyle 互为逆操作
+ */
 cppwordkit::TextStyle QtDocumentMapper::extractTextStyle(const QTextCharFormat& fmt) const
 {
     cppwordkit::TextStyle style;
@@ -359,6 +401,10 @@ cppwordkit::TextStyle QtDocumentMapper::extractTextStyle(const QTextCharFormat& 
     return style;
 }
 
+/**
+ * 从 QTextBlockFormat 提取 cppwordkit 段落样式
+ * 与 mapParagraphStyle 互为逆操作，points -> twips 换算
+ */
 cppwordkit::ParagraphStyle QtDocumentMapper::extractParagraphStyle(const QTextBlockFormat& fmt) const
 {
     cppwordkit::ParagraphStyle style;

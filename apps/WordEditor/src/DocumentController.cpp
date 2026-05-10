@@ -1,3 +1,5 @@
+//! @file DocumentController.cpp 文档控制器实现
+
 #include "DocumentController.hpp"
 #include "ImageStore.hpp"
 #include "QtDocumentMapper.hpp"
@@ -15,6 +17,7 @@ DocumentController::DocumentController(QObject* parent)
 bool DocumentController::newDocument()
 {
     try {
+        // 通过 cppwordkit 创建空白文档，清空当前路径和修改状态
         document_ = std::make_unique<cppwordkit::WordDocument>(
             cppwordkit::WordDocument::create());
         currentPath_.clear();
@@ -33,6 +36,7 @@ bool DocumentController::newDocument()
 bool DocumentController::openDocument(const QString& path)
 {
     try {
+        // 从文件打开 Word 文档，捕获 PackageException 以给出更友好的错误提示
         auto doc = cppwordkit::WordDocument::open(path.toStdString());
         document_ = std::make_unique<cppwordkit::WordDocument>(std::move(doc));
         currentPath_ = path;
@@ -83,6 +87,7 @@ bool DocumentController::saveDocumentAs(const QString& path)
     }
 
     try {
+        // 另存为新路径后，更新当前路径为新的保存位置
         document_->saveAs(path.toStdString());
         currentPath_ = path;
         modified_ = false;
@@ -104,6 +109,7 @@ bool DocumentController::exportPdf(const QString& /*path*/)
         return false;
     }
 
+    // PDF 导出目前依赖 QTextDocument 的渲染能力，在此仅做状态提示
     emit statusMessage("导出 PDF 需要通过编辑器内容生成");
     return true;
 }
@@ -143,6 +149,7 @@ const cppwordkit::WordDocument* DocumentController::wordDocument() const
 
 void DocumentController::setModified(bool modified)
 {
+    // 避免在修改状态未变化时触发冗余信号
     if (modified_ != modified) {
         modified_ = modified;
         emit modifiedChanged(modified_);

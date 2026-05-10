@@ -1,3 +1,7 @@
+//! @file ZipArchive.cpp ZIP 归档的读取与写入实现
+//! 手动解析 ZIP 二进制格式（Local File Header / Central Directory / EOCD），
+//! 支持 Store（无压缩）和 Deflate（zlib）两种方法
+
 #include "ZipArchive.hpp"
 
 #include "cppwordkit/Error.hpp"
@@ -16,13 +20,18 @@
 #include <utility>
 
 namespace cppwordkit {
+//! @namespace cppwordkit 顶层命名空间，包含 ZIP、XML、OOXML 文档操作的所有类型
 namespace {
 
-constexpr std::uint32_t localFileHeaderSignature = 0x04034b50;
-constexpr std::uint32_t centralDirectorySignature = 0x02014b50;
-constexpr std::uint32_t endOfCentralDirectorySignature = 0x06054b50;
-constexpr std::uint16_t storeMethod = 0;
-constexpr std::uint16_t deflateMethod = 8;
+// ZIP 格式魔数签名
+constexpr std::uint32_t localFileHeaderSignature = 0x04034b50;       //!< PK\003\004 本地文件头
+constexpr std::uint32_t centralDirectorySignature = 0x02014b50;      //!< PK\001\002 中央目录头
+constexpr std::uint32_t endOfCentralDirectorySignature = 0x06054b50; //!< PK\005\006 EOCD 尾记录
+constexpr std::uint16_t storeMethod = 0;   //!< 不压缩（存储模式）
+constexpr std::uint16_t deflateMethod = 8; //!< Deflate 压缩
+
+// 以下 readU16 / readU32 / writeU16 / writeU32 用于解析和生成 ZIP 二进制格式
+// ZIP 使用小端序（Little-Endian），直接按字节拼接即可
 
 std::uint16_t readU16(const std::vector<std::uint8_t>& data, std::size_t offset) {
     if (offset + 2 > data.size()) {
@@ -55,6 +64,7 @@ void writeU32(std::vector<std::uint8_t>& data, std::uint32_t value) {
     data.push_back(static_cast<std::uint8_t>((value >> 24) & 0xff));
 }
 
+// 读取整个文件到字节数组
 std::vector<std::uint8_t> readFile(const Path& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
@@ -63,6 +73,7 @@ std::vector<std::uint8_t> readFile(const Path& path) {
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
+// 将字节数组写入文件
 void writeFile(const Path& path, const std::vector<std::uint8_t>& data) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) {
@@ -71,6 +82,8 @@ void writeFile(const Path& path, const std::vector<std::uint8_t>& data) {
     output.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
 }
 
+// 解压 Deflate 数据（raw 模式，无 zlib 头部）
+// 使用 -MAX_WBITS 告诉 zlib 这是 raw deflate 流（ZIP 中使用的格式）
 std::vector<std::uint8_t> inflateRaw(
     const std::uint8_t* input,
     std::size_t compressedSize,
@@ -95,6 +108,7 @@ std::vector<std::uint8_t> inflateRaw(
     return output;
 }
 
+// 压缩数据为 Deflate raw 格式（ZIP 内部使用的压缩方式）
 std::vector<std::uint8_t> deflateRaw(const std::vector<std::uint8_t>& input) {
     z_stream stream{};
     if (deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
@@ -119,6 +133,7 @@ std::vector<std::uint8_t> deflateRaw(const std::vector<std::uint8_t>& input) {
     return output;
 }
 
+// ZIP32 格式中大部分字段为 16 位或 32 位，大文件/大数据可能溢出，此处做安全检查
 std::uint32_t checkedU32(std::size_t value, const char* label) {
     if (value > std::numeric_limits<std::uint32_t>::max()) {
         throw PackageException(std::string(label) + " is too large for zip32");
@@ -141,6 +156,8 @@ ZipArchive ZipArchive::read(const Path& path) {
         throw PackageException("Invalid zip file: " + path.string());
     }
 
+    // 从文件末尾向前搜索 EOCD（End of Central Directory）签名
+    // EOCD 固定为 22 字节，但末尾可能附加注释（最长 0xFFFF 字节），所以需要在一定范围内搜索
     const std::size_t searchStart = file.size() > 0xffff + 22 ? file.size() - (0xffff + 22) : 0;
     std::optional<std::size_t> eocdOffset;
     for (std::size_t offset = file.size() - 22; offset + 1 > searchStart; --offset) {
@@ -156,6 +173,7 @@ ZipArchive ZipArchive::read(const Path& path) {
         throw PackageException("Zip end of central directory not found");
     }
 
+    // 从 EOCD 中读取条目数量和中央目录偏移
     const auto entryCount = readU16(file, *eocdOffset + 10);
     const auto centralOffset = readU32(file, *eocdOffset + 16);
     std::size_t cursor = centralOffset;
@@ -174,6 +192,7 @@ ZipArchive ZipArchive::read(const Path& path) {
         const auto commentLength = readU16(file, cursor + 32);
         const auto localOffset = readU32(file, cursor + 42);
 
+        // 检查是否加密（bit 0），不支持加密 ZIP
         if ((flags & 0x1) != 0) {
             throw PackageException("Encrypted zip entries are not supported");
         }
@@ -211,12 +230,13 @@ ZipArchive ZipArchive::read(const Path& path) {
 }
 
 void ZipArchive::write(const Path& path) const {
+    // 生成 ZIP 文件的内存结构：先写所有 Local File Header + 数据，再写 Central Directory，最后写 EOCD
     struct CentralRecord {
         std::string name;
         std::uint32_t crc{};
         std::uint32_t compressedSize{};
         std::uint32_t uncompressedSize{};
-        std::uint32_t localOffset{};
+        std::uint32_t localOffset{};  //!< 本地文件头在 output 中的偏移
     };
 
     std::vector<std::uint8_t> output;
@@ -319,6 +339,7 @@ void ZipArchive::setBytes(const std::string& name, std::vector<std::uint8_t> con
     addOrReplace(name, std::move(content));
 }
 
+// 添加或替换 ZIP 条目：若名称已存在则覆盖数据，否则追加到末尾
 void ZipArchive::addOrReplace(std::string name, std::vector<std::uint8_t> data) {
     const auto it = index_.find(name);
     if (it != index_.end()) {

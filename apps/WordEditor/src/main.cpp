@@ -1,3 +1,5 @@
+//! @file main.cpp CppWordKit Word Editor 应用程序入口
+
 #include <QApplication>
 #include "MainWindow.hpp"
 

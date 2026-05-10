@@ -1,3 +1,5 @@
+//! @file OpenXmlPackage.cpp OOXML 包管理实现，包括空白文档创建、部件读取/写入和图像添加
+
 #include "OpenXmlPackage.hpp"
 
 #include "cppwordkit/Error.hpp"
@@ -17,6 +19,7 @@ bool endsWith(std::string_view value, std::string_view suffix) {
     return value.size() >= suffix.size() && value.substr(value.size() - suffix.size()) == suffix;
 }
 
+// 空白文档的 [Content_Types].xml 模板
 constexpr const char* contentTypesXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -25,12 +28,14 @@ constexpr const char* contentTypesXml = R"(<?xml version="1.0" encoding="UTF-8" 
 </Types>
 )";
 
+// 空白文档的根关系文件（_rels/.rels）模板
 constexpr const char* rootRelsXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>
 )";
 
+// 空白文档的主文档（word/document.xml）模板，含一个空段落和节属性
 constexpr const char* documentXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>
@@ -44,10 +49,12 @@ constexpr const char* documentXml = R"(<?xml version="1.0" encoding="UTF-8" stan
 </w:document>
 )";
 
+// 空白文档的文档关系文件模板
 constexpr const char* documentRelsXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>
 )";
 
+// 读取二进制文件全部内容
 std::vector<std::uint8_t> readBinaryFile(const Path& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
@@ -63,6 +70,7 @@ std::string lowerAscii(std::string value) {
     return value;
 }
 
+// 根据文件扩展名返回对应的 MIME 类型
 std::string imageContentType(std::string_view extension) {
     if (extension == "jpg" || extension == "jpeg") {
         return "image/jpeg";
@@ -79,6 +87,7 @@ std::string imageContentType(std::string_view extension) {
     throw PackageException("Unsupported image extension: " + std::string(extension));
 }
 
+// 去除扩展名前导点号并统一为小写
 std::string stripLeadingDot(std::string extension) {
     if (!extension.empty() && extension.front() == '.') {
         extension.erase(extension.begin());
@@ -88,12 +97,14 @@ std::string stripLeadingDot(std::string extension) {
 
 } // namespace
 
+//! 打开现有 OOXML 包：读取 ZIP，校验包含主文档，自动加载所有 XML 和关系部件
 OpenXmlPackage OpenXmlPackage::open(const Path& path) {
     OpenXmlPackage package;
     package.archive_ = ZipArchive::read(path);
     if (!package.archive_.contains("word/document.xml")) {
         throw PackageException("Package does not contain word/document.xml");
     }
+    // 预加载所有 XML 部件到内存，便于后续频繁读取
     for (const auto& name : package.archive_.names()) {
         if (endsWith(name, ".xml") || endsWith(name, ".rels")) {
             package.loadXmlPart(name);
@@ -115,6 +126,7 @@ OpenXmlPackage OpenXmlPackage::createBlankDocument() {
     return package;
 }
 
+//! 保存 OOXML 包：先将内存中修改过的 XML 部件刷回 ZIP 归档，再写入文件
 void OpenXmlPackage::saveAs(const Path& path) const {
     auto archive = archive_;
     for (const auto& [name, part] : xmlParts_) {
@@ -167,6 +179,8 @@ std::optional<std::vector<std::uint8_t>> OpenXmlPackage::rawPart(std::string_vie
     return archive_.bytes(key);
 }
 
+//! 添加图像部件到包中：复制图像文件到 word/media/，同时更新 [Content_Types].xml
+//! @return 生成的部件路径，如 "word/media/image1.png"
 std::string OpenXmlPackage::addImagePart(const Path& imagePath) {
     const auto extension = stripLeadingDot(imagePath.extension().string());
     const auto contentType = imageContentType(extension);

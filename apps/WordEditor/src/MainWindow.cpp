@@ -1,3 +1,5 @@
+//! @file MainWindow.cpp 应用程序主窗口实现
+
 #include "MainWindow.hpp"
 
 #include <QApplication>
@@ -27,12 +29,14 @@ MainWindow::MainWindow(QWidget* parent)
     connectSignals();
     updateTitle();
 
+    // 初始化时创建一个空白文档并导入到编辑器
     controller_->newDocument();
     doImport();
 }
 
 void MainWindow::setupMenus()
 {
+    // 文件菜单
     fileMenu_ = menuBar()->addMenu("文件(&F)");
 
     newAction_ = fileMenu_->addAction("新建(&N)");
@@ -64,6 +68,7 @@ void MainWindow::setupMenus()
     exitAction_->setShortcut(QKeySequence("Ctrl+Q"));
     connect(exitAction_, &QAction::triggered, this, &QWidget::close);
 
+    // 编辑菜单
     editMenu_ = menuBar()->addMenu("编辑(&E)");
 
     undoAction_ = editMenu_->addAction("撤销(&U)");
@@ -94,6 +99,7 @@ void MainWindow::setupMenus()
     selectAllAction_->setShortcut(QKeySequence::SelectAll);
     connect(selectAllAction_, &QAction::triggered, editor_, &QTextEdit::selectAll);
 
+    // 插入菜单
     insertMenu_ = menuBar()->addMenu("插入(&I)");
 
     insertImageAction_ = insertMenu_->addAction("图片(&P)...");
@@ -105,12 +111,14 @@ void MainWindow::setupMenus()
 
 void MainWindow::setupToolbars()
 {
+    // 将格式工具栏与编辑器关联并添加到主窗口
     formatToolbar_->setEditor(editor_);
     addToolBar(formatToolbar_);
 }
 
 void MainWindow::setupStatusBar()
 {
+    // 状态栏：按比例分配空间，显示文件路径、修改状态和操作提示
     filePathLabel_ = new QLabel("未命名文档");
     modifiedLabel_ = new QLabel("");
     messageLabel_ = new QLabel("");
@@ -124,19 +132,23 @@ void MainWindow::setupEditor()
 {
     setCentralWidget(editor_);
     editor_->setAcceptRichText(true);
+    // 使用等线字体作为默认字体，12 号字适合中文文档编辑
     editor_->document()->setDefaultFont(QFont("等线", 12));
 }
 
 void MainWindow::connectSignals()
 {
+    // 监听编辑器文档的修改状态变化，同步到控制器
     connect(editor_->document(), &QTextDocument::modificationChanged,
             this, &MainWindow::onEditorModified);
 
+    // 控制器修改状态变化时更新状态栏和标题栏
     connect(controller_, &DocumentController::modifiedChanged, this, [this](bool modified) {
         modifiedLabel_->setText(modified ? "● 已修改" : "  已保存");
         updateTitle();
     });
 
+    // 控制器文件路径变化时同步更新状态栏
     connect(controller_, &DocumentController::pathChanged, this, [this](const QString& path) {
         if (path.isEmpty()) {
             filePathLabel_->setText("未命名文档");
@@ -146,10 +158,12 @@ void MainWindow::connectSignals()
         updateTitle();
     });
 
+    // 控制器的状态消息显示到状态栏
     connect(controller_, &DocumentController::statusMessage, this, [this](const QString& msg) {
         messageLabel_->setText(msg);
     });
 
+    // 控制器的错误信号：状态栏显示错误消息并弹出警告对话框
     connect(controller_, &DocumentController::errorOccurred, this, [this](const QString& msg) {
         messageLabel_->setText("错误: " + msg);
         QMessageBox::warning(this, "错误", msg);
@@ -158,6 +172,7 @@ void MainWindow::connectSignals()
 
 void MainWindow::onNewDocument()
 {
+    // 如果当前文档已修改，提示用户保存
     if (controller_->isModified()) {
         auto result = QMessageBox::question(this, "新建文档",
             "当前文档已修改，是否保存？",
@@ -169,6 +184,7 @@ void MainWindow::onNewDocument()
         }
     }
 
+    // 创建新文档后清空图片缓存和编辑器内容
     if (controller_->newDocument()) {
         imageStore_->clear();
         editor_->clear();
@@ -178,6 +194,7 @@ void MainWindow::onNewDocument()
 
 void MainWindow::onOpenDocument()
 {
+    // 如果当前文档已修改，提示用户保存
     if (controller_->isModified()) {
         auto result = QMessageBox::question(this, "打开文档",
             "当前文档已修改，是否保存？",
@@ -201,8 +218,10 @@ void MainWindow::onOpenDocument()
 
 void MainWindow::onSaveDocument()
 {
+    // 保存前先导出编辑器内容到模型，确保数据一致性
     doExport();
 
+    // 若文档尚未保存过（无路径），则转交另存为流程
     if (controller_->currentPath().isEmpty()) {
         onSaveDocumentAs();
         return;
@@ -219,6 +238,7 @@ void MainWindow::onSaveDocumentAs()
         "Word 文档 (*.docx)");
     if (path.isEmpty()) return;
 
+    // 自动补全 .docx 扩展名
     if (!path.endsWith(".docx", Qt::CaseInsensitive)) {
         path += ".docx";
     }
@@ -232,10 +252,12 @@ void MainWindow::onExportPdf()
         "PDF 文件 (*.pdf)");
     if (path.isEmpty()) return;
 
+    // 自动补全 .pdf 扩展名
     if (!path.endsWith(".pdf", Qt::CaseInsensitive)) {
         path += ".pdf";
     }
 
+    // 使用 QPrinter 将编辑器内容渲染为 PDF，A4 页面
     QPrinter printer;
     printer.setOutputFormat(QPrinter::PdfFormat);
     printer.setOutputFileName(path);
@@ -251,6 +273,7 @@ void MainWindow::onInsertImage()
 {
     if (!controller_->isOpen()) return;
 
+    // 选择图片文件，支持常见图片格式
     QStringList filters;
     filters << "图片文件 (*.png *.jpg *.jpeg *.gif *.bmp)"
             << "PNG (*.png)"
@@ -263,6 +286,7 @@ void MainWindow::onInsertImage()
         filters.join(";;"));
     if (filePath.isEmpty()) return;
 
+    // 读取原始图片数据
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, "插入图片", "无法打开图片文件");
@@ -272,6 +296,7 @@ void MainWindow::onInsertImage()
     QByteArray imgData = file.readAll();
     file.close();
 
+    // 提取扩展名以确定图片格式
     QFileInfo fi(filePath);
     QString suffix = fi.suffix().toLower();
     if (suffix.isEmpty()) suffix = "png";
@@ -282,8 +307,10 @@ void MainWindow::onInsertImage()
         return;
     }
 
+    // 将图片作为 QTextDocument 的 ImageResource 注册，以使 QTextEdit 可渲染
     imageStore_->addImagesToDocument(*editor_->document());
 
+    // 根据图片原始尺寸设置显示尺寸，宽度超过编辑区 80% 时等比缩放
     QTextImageFormat imgFmt;
     imgFmt.setName(resourceName);
 
@@ -300,10 +327,12 @@ void MainWindow::onInsertImage()
         imgFmt.setWidth(width);
         imgFmt.setHeight(height);
     } else {
+        // 图片无法解码时使用默认占位尺寸
         imgFmt.setWidth(200);
         imgFmt.setHeight(150);
     }
 
+    // 在光标位置插入图片
     QTextCursor cursor = editor_->textCursor();
     cursor.insertImage(imgFmt);
     editor_->setTextCursor(cursor);
@@ -315,6 +344,7 @@ void MainWindow::onInsertTable()
 {
     if (!controller_->isOpen()) return;
 
+    // 通过对话框输入表格的行数和列数
     bool ok = false;
     int rows = QInputDialog::getInt(this, "插入表格", "行数:", 3, 1, 100, 1, &ok);
     if (!ok) return;
@@ -337,6 +367,7 @@ void MainWindow::onInsertTable()
 
 void MainWindow::onEditorModified()
 {
+    // 将 QTextEdit 的修改状态同步到控制器
     bool modified = editor_->document()->isModified();
     controller_->setModified(modified);
 }
@@ -348,6 +379,7 @@ void MainWindow::updateStatusFromController()
 
 void MainWindow::updateTitle()
 {
+    // 标题格式：文件名 [+ 修改标记] - 应用程序名
     QString title = controller_->currentFileName();
     if (controller_->isModified()) {
         title += " *";
@@ -356,6 +388,10 @@ void MainWindow::updateTitle()
     setWindowTitle(title);
 }
 
+/**
+ * 从控制器模型导入到 QTextDocument
+ * 将 cppwordkit::DocumentModel 转换为 QTextDocument 内容供编辑器显示
+ */
 void MainWindow::doImport()
 {
     if (!controller_->wordDocument()) return;
@@ -365,6 +401,10 @@ void MainWindow::doImport()
     editor_->document()->setModified(false);
 }
 
+/**
+ * 从 QTextDocument 导出回控制器模型
+ * 将编辑器内容同步为 cppwordkit::DocumentModel，再写回 WordDocument
+ */
 void MainWindow::doExport()
 {
     if (!controller_->wordDocument()) return;

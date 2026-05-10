@@ -1,3 +1,5 @@
+//! @file FormatToolbar.cpp 格式工具栏实现
+
 #include "FormatToolbar.hpp"
 
 #include <QFontDatabase>
@@ -22,12 +24,14 @@ void FormatToolbar::setupUi()
     setMovable(false);
     setIconSize(QSize(16, 16));
 
+    // 字体选择：使用 QFontComboBox，预设简体中文字体
     addWidget(new QLabel("字体 "));
     fontCombo_ = new QFontComboBox(this);
     fontCombo_->setMinimumWidth(160);
     fontCombo_->setWritingSystem(QFontDatabase::SimplifiedChinese);
     addWidget(fontCombo_);
 
+    // 字号选择：可编辑下拉框，预置常用字号，默认 12pt
     addSeparator();
     addWidget(new QLabel("字号 "));
     fontSizeCombo_ = new QComboBox(this);
@@ -40,6 +44,7 @@ void FormatToolbar::setupUi()
     fontSizeCombo_->setCurrentText("12");
     addWidget(fontSizeCombo_);
 
+    // 样式按钮组：粗体/斜体/下划线/删除线，均为可切换状态
     addSeparator();
 
     boldAction_ = addAction("B");
@@ -67,6 +72,7 @@ void FormatToolbar::setupUi()
     strikeAction_->setCheckable(true);
     strikeAction_->setToolTip("删除线");
 
+    // 颜色按钮组：文字颜色和背景色，点击弹出颜色选择对话框
     addSeparator();
 
     textColorAction_ = addAction("A");
@@ -81,6 +87,7 @@ void FormatToolbar::setupUi()
     bgFont.setBold(true);
     backgroundColorAction_->setFont(bgFont);
 
+    // 对齐按钮组：使用 QActionGroup 保持互斥选择
     addSeparator();
 
     QActionGroup* alignGroup = new QActionGroup(this);
@@ -127,6 +134,7 @@ void FormatToolbar::setupConnections()
     connect(backgroundColorAction_, &QAction::triggered,
             this, &FormatToolbar::onBackgroundColorClicked);
 
+    // 对齐按钮：通过 lambda 中转以复用 onAlignmentChanged 统一处理
     connect(alignLeftAction_, &QAction::triggered,
             this, [this]() { onAlignmentChanged(alignLeftAction_); });
     connect(alignCenterAction_, &QAction::triggered,
@@ -139,6 +147,7 @@ void FormatToolbar::setupConnections()
 
 void FormatToolbar::setEditor(QTextEdit* editor)
 {
+    // 断开旧编辑器的信号连接
     if (editor_) {
         disconnect(editor_, &QTextEdit::currentCharFormatChanged,
                    this, &FormatToolbar::updateStateFromEditor);
@@ -148,6 +157,7 @@ void FormatToolbar::setEditor(QTextEdit* editor)
 
     editor_ = editor;
 
+    // 监听新编辑器的格式变化和光标位置变化，实时同步工具栏状态
     if (editor_) {
         connect(editor_, &QTextEdit::currentCharFormatChanged,
                 this, &FormatToolbar::updateStateFromEditor);
@@ -164,7 +174,7 @@ void FormatToolbar::onFontFamilyChanged(const QString& family)
     QTextCharFormat fmt;
     fmt.setFontFamilies({family});
     editor_->mergeCurrentCharFormat(fmt);
-    editor_->setFocus();
+    editor_->setFocus();  // 操作后将焦点还给编辑器，便于继续输入
 }
 
 void FormatToolbar::onFontSizeChanged(const QString& sizeText)
@@ -269,6 +279,10 @@ void FormatToolbar::onAlignmentChanged(QAction* action)
     editor_->setFocus();
 }
 
+/**
+ * 同步工具栏状态到当前编辑器光标处的格式
+ * 为避免信号循环导致死循环，在更新 UI 前临时阻断控件信号
+ */
 void FormatToolbar::updateStateFromEditor()
 {
     if (!editor_) return;
@@ -304,6 +318,7 @@ void FormatToolbar::updateStateFromEditor()
     }
     fontSizeCombo_->blockSignals(false);
 
+    // 同步对齐状态：清除各按钮信号后设置当前对齐方式
     QTextBlockFormat blockFmt = editor_->textCursor().blockFormat();
     alignLeftAction_->blockSignals(true);
     alignCenterAction_->blockSignals(true);

@@ -1,3 +1,5 @@
+//! @file ImageStore.cpp 图片资源管理器实现
+
 #include "ImageStore.hpp"
 
 #include <QTextDocument>
@@ -16,6 +18,7 @@ ImageStore::ImageStore(QObject* parent)
 QString ImageStore::addImage(const QByteArray& imageData, const QString& format)
 {
     counter_++;
+    // 使用自增计数器生成唯一的资源名称，避免多张图片冲突
     QString resourceName = QString("cppwordkit_image_%1.%2").arg(counter_).arg(format);
 
     ImageEntry entry;
@@ -56,6 +59,8 @@ QByteArray ImageStore::imageData(const QString& resourceName) const
 
 void ImageStore::addImagesToDocument(QTextDocument& doc)
 {
+    // 将存储的图片数据解码为 QImage 并注册为 QTextDocument 的 ImageResource
+    // 这是 QTextEdit 能渲染内嵌图片的关键步骤
     for (const auto& entry : entries_) {
         QImage image;
         if (image.loadFromData(entry.rawData)) {
@@ -71,6 +76,7 @@ void ImageStore::clear()
     entries_.clear();
     counter_ = 0;
 
+    // 清理导出时创建的临时文件
     for (auto* tmp : tempFiles_) {
         delete tmp;
     }

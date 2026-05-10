@@ -1,3 +1,6 @@
+//! @file XmlPart.cpp XML 文档部件的封装实现，基于 libxml2 解析 OOXML 中的 XML 内容
+//! 提供文本替换、样式设置、表格行插入、XPath 查询等操作
+
 #include "cppwordkit/XmlPart.hpp"
 
 #include "Detail.hpp"
@@ -22,6 +25,7 @@
 namespace cppwordkit {
 namespace {
 
+// 将 libxml2 的 xmlChar* 转为 std::string 并释放原内存
 std::string xmlStringToStd(xmlChar* value) {
     if (value == nullptr) {
         return {};
@@ -31,12 +35,14 @@ std::string xmlStringToStd(xmlChar* value) {
     return result;
 }
 
+// 判断 XML 节点是否为指定名称的元素节点（使用 xmlStrEqual 确保命名空间感知比较）
 bool isElementNamed(xmlNodePtr node, const char* localName) {
     return node != nullptr &&
         node->type == XML_ELEMENT_NODE &&
         xmlStrEqual(node->name, reinterpret_cast<const xmlChar*>(localName)) == 1;
 }
 
+// 验证是否为 6 位十六进制 RGB 颜色值
 bool isHexColor(std::string_view value) {
     return value.size() == 6 && std::ranges::all_of(value, [](unsigned char ch) {
         return std::isxdigit(ch) != 0;
@@ -51,6 +57,8 @@ std::string upperAscii(std::string_view value) {
     return result;
 }
 
+// 获取 XML 节点的 w: 命名空间属性值
+// OOXML 的 WordprocessingML 命名空间为 http://schemas.openxmlformats.org/wordprocessingml/2006/main
 std::string wAttributeValue(xmlNodePtr node, const char* localName) {
     if (node == nullptr) {
         return {};
@@ -62,6 +70,7 @@ std::string wAttributeValue(xmlNodePtr node, const char* localName) {
     ));
 }
 
+// 设置 XML 节点的 w: 命名空间属性，若命名空间未注册则自动创建
 void setWAttribute(xmlNodePtr node, const char* localName, std::string_view value) {
     if (node == nullptr) {
         throw WordProcessingException("Cannot set attribute on null XML node");
@@ -86,6 +95,7 @@ void setWAttribute(xmlNodePtr node, const char* localName, std::string_view valu
     );
 }
 
+// 创建新的 w: 命名空间元素节点
 xmlNodePtr newWElement(xmlDocPtr doc, const char* localName) {
     auto* root = xmlDocGetRootElement(doc);
     auto* ns = xmlSearchNsByHref(
@@ -108,6 +118,7 @@ xmlNodePtr newWElement(xmlDocPtr doc, const char* localName) {
     return node;
 }
 
+// 查找父节点下第一个指定名称的子元素
 xmlNodePtr firstChildElement(xmlNodePtr parent, const char* localName) {
     if (parent == nullptr) {
         return nullptr;
@@ -120,6 +131,8 @@ xmlNodePtr firstChildElement(xmlNodePtr parent, const char* localName) {
     return nullptr;
 }
 
+// 确保子元素存在：若存在则返回现有元素，否则在第一个子节点前插入新元素
+// 用于确保 rPr / pPr 等属性节点在正确位置（作为第一个子元素）
 xmlNodePtr ensureFirstChild(xmlNodePtr parent, const char* localName) {
     auto* existing = firstChildElement(parent, localName);
     if (existing != nullptr) {
@@ -140,6 +153,7 @@ xmlNodePtr ensureFirstChild(xmlNodePtr parent, const char* localName) {
     return inserted;
 }
 
+// 确保子元素存在：追加到父节点末尾（用于不需特定顺序的属性节点）
 xmlNodePtr ensureChild(xmlNodePtr parent, const char* localName) {
     auto* existing = firstChildElement(parent, localName);
     if (existing != nullptr) {
@@ -154,6 +168,7 @@ xmlNodePtr ensureChild(xmlNodePtr parent, const char* localName) {
     return node;
 }
 
+// 安全解析整数值，失败时返回 nullopt
 std::optional<std::int32_t> parseInt(std::string_view value) {
     if (value.empty()) {
         return std::nullopt;
@@ -165,6 +180,7 @@ std::optional<std::int32_t> parseInt(std::string_view value) {
     }
 }
 
+// 将对齐枚举转为 OOXML 字符串（OOXML 中两端对齐使用 "both"）
 std::string alignmentToXml(ParagraphAlignment alignment) {
     switch (alignment) {
     case ParagraphAlignment::Left:
@@ -220,6 +236,7 @@ std::optional<LineSpacingRule> lineRuleFromXml(std::string_view value) {
     return std::nullopt;
 }
 
+// 解析 OOXML 的 toggle 属性节点：val 为空或 true/1/on 视为启用，false/0/off 视为禁用
 std::optional<bool> boolFromToggleNode(xmlNodePtr node) {
     if (node == nullptr) {
         return std::nullopt;
@@ -234,6 +251,7 @@ std::optional<bool> boolFromToggleNode(xmlNodePtr node) {
     return std::nullopt;
 }
 
+// 设置 toggle 属性的子元素：启用时不需要 val="1"，禁用时设置 val="0"
 void setToggleChild(xmlNodePtr parent, const char* localName, bool enabled) {
     auto* child = ensureChild(parent, localName);
     if (enabled) {
@@ -242,10 +260,12 @@ void setToggleChild(xmlNodePtr parent, const char* localName, bool enabled) {
     setWAttribute(child, "val", "0");
 }
 
+// XPath: 定位第 paragraphIndex 个段落（从 0 开始）
 std::string paragraphXPath(std::size_t paragraphIndex) {
     return "(//w:p)[" + std::to_string(paragraphIndex + 1) + "]";
 }
 
+// XPath: 定位段落中的特定 run
 std::string runXPath(std::size_t paragraphIndex, std::size_t runIndex) {
     return paragraphXPath(paragraphIndex) + "/w:r[" + std::to_string(runIndex + 1) + "]";
 }
@@ -270,6 +290,7 @@ bool nodeIsTextLike(xmlNodePtr node) {
     return node != nullptr && node->type == XML_TEXT_NODE;
 }
 
+// 向 XPath 上下文注册命名空间前缀，若注册失败返回 false
 bool registerNamespace(xmlXPathContextPtr context, const char* prefix, const char* href) {
     return xmlXPathRegisterNs(
         context,
@@ -278,11 +299,12 @@ bool registerNamespace(xmlXPathContextPtr context, const char* prefix, const cha
     ) == 0;
 }
 
+// 表示一个 w:t 文本节点及其在合并文本中的位置范围
 struct WordTextNode {
     xmlNodePtr node{};
     std::string text;
-    std::size_t start{};
-    std::size_t end{};
+    std::size_t start{};  //!< 在 combinedText 中的起始位置
+    std::size_t end{};    //!< 在 combinedText 中的结束位置
 };
 
 struct TextMatch {
@@ -290,6 +312,7 @@ struct TextMatch {
     std::size_t length{};
 };
 
+// 在字符串中查找所有匹配的位置（返回位置列表而非原地替换）
 std::vector<TextMatch> findMatches(
     std::string_view text,
     std::string_view search,
@@ -310,6 +333,7 @@ std::vector<TextMatch> findMatches(
     return matches;
 }
 
+// 找到第一个与匹配范围重叠的 WordTextNode 索引
 std::size_t firstOverlappingNode(
     const std::vector<WordTextNode>& nodes,
     std::size_t matchStart,
@@ -323,6 +347,7 @@ std::size_t firstOverlappingNode(
     return nodes.size();
 }
 
+// 找到最后一个与匹配范围重叠的 WordTextNode 索引
 std::size_t lastOverlappingNode(
     const std::vector<WordTextNode>& nodes,
     std::size_t matchStart,
@@ -337,6 +362,7 @@ std::size_t lastOverlappingNode(
     return nodes.size();
 }
 
+// 规范化表格书签名：如果已经是 ${...} 格式则原样返回，否则补全 ${...}
 std::string normalizeTableBookmark(std::string_view bookmark) {
     if (bookmark.empty()) {
         throw WordProcessingException("Table row bookmark must not be empty");
@@ -351,6 +377,7 @@ std::string normalizeTableBookmark(std::string_view bookmark) {
     return "${" + std::string(bookmark) + "}";
 }
 
+// 向上查找指定名称的祖先元素
 xmlNodePtr findAncestor(xmlNodePtr node, const char* localName) {
     for (auto* current = node; current != nullptr; current = current->parent) {
         if (isElementNamed(current, localName)) {
@@ -360,6 +387,7 @@ xmlNodePtr findAncestor(xmlNodePtr node, const char* localName) {
     return nullptr;
 }
 
+// 收集父节点下所有指定名称的直接子元素
 void collectChildElements(xmlNodePtr parent, const char* localName, std::vector<xmlNodePtr>& out) {
     if (parent == nullptr) {
         return;
@@ -372,6 +400,7 @@ void collectChildElements(xmlNodePtr parent, const char* localName, std::vector<
     }
 }
 
+// 递归收集所有指定名称的后代元素
 void collectDescendants(xmlNodePtr parent, const char* localName, std::vector<xmlNodePtr>& out) {
     if (parent == nullptr) {
         return;
@@ -385,6 +414,7 @@ void collectDescendants(xmlNodePtr parent, const char* localName, std::vector<xm
     }
 }
 
+// 用数据填充表格行的每个单元格：第一个 w:t 写入文本，其余清空
 void fillTableRow(xmlNodePtr row, const TableRow& data) {
     std::vector<xmlNodePtr> cells;
     collectChildElements(row, "tc", cells);
@@ -404,6 +434,7 @@ void fillTableRow(xmlNodePtr row, const TableRow& data) {
     }
 }
 
+// 从表格行中删除书签标记文本
 void removeBookmarkText(xmlNodePtr row, std::string_view bookmark) {
     std::vector<xmlNodePtr> textNodes;
     collectDescendants(row, "t", textNodes);
@@ -415,6 +446,7 @@ void removeBookmarkText(xmlNodePtr row, std::string_view bookmark) {
     }
 }
 
+// 将 XML 片段解析为独立文档（用于后续复制节点到目标文档）
 std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> parseXmlFragmentDoc(std::string_view xml) {
     auto* doc = xmlReadMemory(
         xml.data(),
@@ -429,6 +461,7 @@ std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> parseXmlFragmentDoc(std::string_v
     return std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)>(doc, xmlFreeDoc);
 }
 
+// 解析 XML 片段并深拷贝其根节点到目标文档（用于从外部 XML 插入内容到 OOXML 文档）
 xmlNodePtr copyXmlFragmentRoot(std::string_view xml, xmlDocPtr targetDoc) {
     auto fragmentDoc = parseXmlFragmentDoc(xml);
     auto* root = xmlDocGetRootElement(fragmentDoc.get());
@@ -443,14 +476,16 @@ xmlNodePtr copyXmlFragmentRoot(std::string_view xml, xmlDocPtr targetDoc) {
     return copied;
 }
 
+// 从任意 XML 节点向上查找所属的 w:r（Word run）元素
 xmlNodePtr findWordRunForTextNode(xmlNodePtr textNode) {
     return findAncestor(textNode, "r");
 }
 
 } // namespace
 
+// XmlPart 的 PIMPL 实现，封装 libxml2 的 XML 文档和 XPath 求值
 struct XmlPart::Impl {
-    xmlDocPtr doc{};
+    xmlDocPtr doc{};  //!< libxml2 XML 文档指针
 
     Impl() = default;
 
@@ -467,6 +502,7 @@ struct XmlPart::Impl {
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
 
+    // 解析 XML 字符串，替换之前的文档内容
     void parse(std::string xmlContent) {
         if (doc != nullptr) {
             xmlFreeDoc(doc);
@@ -478,6 +514,7 @@ struct XmlPart::Impl {
         }
     }
 
+    // 创建 XPath 上下文并注册 OOXML 常用的命名空间前缀
     [[nodiscard]] xmlXPathContextPtr makeXPathContext() const {
         if (doc == nullptr) {
             throw XmlException("XML document is empty");
@@ -488,6 +525,7 @@ struct XmlPart::Impl {
             throw XmlException("Unable to create XPath context");
         }
 
+        // 注册 OOXML 核心命名空间
         registerNamespace(context, "w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main");
         registerNamespace(context, "r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships");
         registerNamespace(context, "wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing");
@@ -497,6 +535,7 @@ struct XmlPart::Impl {
         return context;
     }
 
+    // 执行 XPath 表达式并返回结果（调用者负责释放）
     [[nodiscard]] xmlXPathObjectPtr eval(std::string_view xpath) const {
         auto* context = makeXPathContext();
         auto* result = xmlXPathEvalExpression(
@@ -581,6 +620,7 @@ std::vector<std::string> XmlPart::textsByXPath(std::string_view xpath) const {
     return texts;
 }
 
+// 通用的 XML 文本节点替换（替换所有 //text() 节点中的匹配文本）
 bool XmlPart::replaceText(std::string_view search, std::string_view replacement, bool matchCase) {
     bool changed = false;
     auto* result = impl_->eval("//text()");
@@ -606,6 +646,8 @@ bool XmlPart::replaceText(std::string_view search, std::string_view replacement,
     return changed;
 }
 
+// 替换 WordprocessingML 中跨 w:t 节点的文本（占位符可能被分割到多个 w:t 中）
+// 做法：将所有 w:t 的文本合并为连续字符串，定位匹配后再回写到各自的节点
 bool XmlPart::replaceWordText(std::string_view search, std::string_view replacement, bool matchCase) {
     auto* result = impl_->eval("//w:t");
     const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
@@ -634,6 +676,7 @@ bool XmlPart::replaceWordText(std::string_view search, std::string_view replacem
         return false;
     }
 
+    // 逆序处理匹配项，避免前面的替换破坏后面匹配的偏移位置
     for (auto matchIt = matches.rbegin(); matchIt != matches.rend(); ++matchIt) {
         const auto matchStart = matchIt->position;
         const auto matchEnd = matchIt->position + matchIt->length;
@@ -662,6 +705,8 @@ bool XmlPart::replaceWordText(std::string_view search, std::string_view replacem
     return true;
 }
 
+// 在指定书签所在的表格行之后插入新行
+// 找到包含书签的 w:tr，对其深拷贝并填充数据后依次插入为兄弟节点
 std::size_t XmlPart::insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows) {
     const auto normalizedBookmark = normalizeTableBookmark(bookmark);
     auto* result = impl_->eval("//w:t");
@@ -710,6 +755,8 @@ std::size_t XmlPart::insertTableRowsAtBookmark(std::string_view bookmark, const 
     return inserted;
 }
 
+// 用 XML 片段替换占位符文本（用于插入图片等富内容）
+// 保留替换位置前后的文本内容，并在 run 节点后插入新的 XML 节点
 bool XmlPart::replaceWordTextWithXml(std::string_view search, std::string_view replacementXml) {
     auto* result = impl_->eval("//w:t");
     const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
@@ -781,6 +828,8 @@ bool XmlPart::replaceWordTextWithXml(std::string_view search, std::string_view r
     return true;
 }
 
+// 设置指定 run 的文本样式（字体、颜色、大小、粗体/斜体等）
+// 每个属性对应 w:rPr 下的子元素，不存在则自动创建
 void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
     auto* result = impl_->eval(runXPath(paragraphIndex, runIndex));
     const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
@@ -915,6 +964,7 @@ TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) co
     return style;
 }
 
+// 设置段落的样式（对齐、缩进、行距、段前段后间距等）
 void XmlPart::setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style) {
     auto* result = impl_->eval(paragraphXPath(paragraphIndex));
     const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
