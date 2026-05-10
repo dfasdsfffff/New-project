@@ -1,0 +1,8 @@
+add_executable(cppwordkit_read_text read_text.cpp)
+target_link_libraries(cppwordkit_read_text PRIVATE CppWordKit::CppWordKit)
+
+add_executable(cppwordkit_replace_text replace_text.cpp)
+target_link_libraries(cppwordkit_replace_text PRIVATE CppWordKit::CppWordKit)
+
+add_executable(cppwordkit_fill_table fill_table.cpp)
+target_link_libraries(cppwordkit_fill_table PRIVATE CppWordKit::CppWordKit)
