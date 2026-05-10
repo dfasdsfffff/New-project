@@ -37,8 +37,11 @@ public:
     bool replaceText(std::string_view search, std::string_view replacement, bool matchCase = true);
     bool replaceWordText(std::string_view search, std::string_view replacement, bool matchCase = true);
     std::size_t insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows);
+    bool replaceWordTextWithXml(std::string_view search, std::string_view replacementXml);
 
     void setTextByXPath(std::string_view xpath, std::string_view value);
+    void appendChildXml(std::string_view parentXPath, std::string_view childXml);
+    [[nodiscard]] std::size_t countByXPath(std::string_view xpath) const;
     void setTextsByXPath(std::string_view xpath, const std::vector<std::string>& values);
 
     [[nodiscard]] bool hasXPath(std::string_view xpath) const;

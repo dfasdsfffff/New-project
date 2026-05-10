@@ -15,6 +15,7 @@ namespace cppwordkit {
 namespace {
 
 constexpr const char* mainDocumentPath = "word/document.xml";
+constexpr const char* imageRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 std::string xPathIndex(std::size_t index) {
     return std::to_string(index + 1);
@@ -48,6 +49,87 @@ std::string normalizePlaceholder(std::string_view placeholder) {
     }
 
     return "{{" + std::string(placeholder) + "}}";
+}
+
+std::string xmlEscape(std::string_view value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (const char ch : value) {
+        switch (ch) {
+        case '&':
+            escaped += "&amp;";
+            break;
+        case '<':
+            escaped += "&lt;";
+            break;
+        case '>':
+            escaped += "&gt;";
+            break;
+        case '"':
+            escaped += "&quot;";
+            break;
+        case '\'':
+            escaped += "&apos;";
+            break;
+        default:
+            escaped += ch;
+            break;
+        }
+    }
+    return escaped;
+}
+
+std::string mediaRelationshipTarget(const std::string& mediaPartName) {
+    constexpr std::string_view prefix = "word/";
+    if (mediaPartName.rfind(prefix, 0) == 0) {
+        return mediaPartName.substr(prefix.size());
+    }
+    return mediaPartName;
+}
+
+std::string makeInlineImageRunXml(
+    std::string_view relationshipId,
+    const ImageOptions& options
+) {
+    std::ostringstream xml;
+    xml << "<w:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        << "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+        << "xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" "
+        << "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+        << "xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
+        << "<w:drawing>"
+        << "<wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">"
+        << "<wp:extent cx=\"" << options.widthEmu << "\" cy=\"" << options.heightEmu << "\"/>"
+        << "<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>"
+        << "<wp:docPr id=\"1\" name=\"Picture\" descr=\"" << xmlEscape(options.description) << "\"/>"
+        << "<wp:cNvGraphicFramePr>"
+        << "<a:graphicFrameLocks noChangeAspect=\"1\"/>"
+        << "</wp:cNvGraphicFramePr>"
+        << "<a:graphic>"
+        << "<a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
+        << "<pic:pic>"
+        << "<pic:nvPicPr>"
+        << "<pic:cNvPr id=\"0\" name=\"" << xmlEscape(options.description) << "\"/>"
+        << "<pic:cNvPicPr/>"
+        << "</pic:nvPicPr>"
+        << "<pic:blipFill>"
+        << "<a:blip r:embed=\"" << std::string(relationshipId) << "\"/>"
+        << "<a:stretch><a:fillRect/></a:stretch>"
+        << "</pic:blipFill>"
+        << "<pic:spPr>"
+        << "<a:xfrm>"
+        << "<a:off x=\"0\" y=\"0\"/>"
+        << "<a:ext cx=\"" << options.widthEmu << "\" cy=\"" << options.heightEmu << "\"/>"
+        << "</a:xfrm>"
+        << "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>"
+        << "</pic:spPr>"
+        << "</pic:pic>"
+        << "</a:graphicData>"
+        << "</a:graphic>"
+        << "</wp:inline>"
+        << "</w:drawing>"
+        << "</w:r>";
+    return xml.str();
 }
 
 } // namespace
@@ -225,6 +307,20 @@ void WordDocument::fillFirstTable(const TableData& data) {
 
 std::size_t WordDocument::insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows) {
     return mainDocumentPart().insertTableRowsAtBookmark(bookmark, rows);
+}
+
+bool WordDocument::insertImageAtPlaceholder(
+    std::string_view placeholder,
+    const Path& imagePath,
+    const ImageOptions& options
+) {
+    const auto token = normalizePlaceholder(placeholder);
+    const auto mediaPartName = impl_->package.addImagePart(imagePath);
+    const auto relationshipId = impl_->package.addMainDocumentRelationship(
+        imageRelationshipType,
+        mediaRelationshipTarget(mediaPartName)
+    );
+    return mainDocumentPart().replaceWordTextWithXml(token, makeInlineImageRunXml(relationshipId, options));
 }
 
 XmlPart& WordDocument::mainDocumentPart() {

@@ -200,6 +200,38 @@ void removeBookmarkText(xmlNodePtr row, std::string_view bookmark) {
     }
 }
 
+std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> parseXmlFragmentDoc(std::string_view xml) {
+    auto* doc = xmlReadMemory(
+        xml.data(),
+        static_cast<int>(xml.size()),
+        nullptr,
+        nullptr,
+        XML_PARSE_NONET
+    );
+    if (doc == nullptr) {
+        throw WordProcessingException("Unable to parse XML fragment");
+    }
+    return std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)>(doc, xmlFreeDoc);
+}
+
+xmlNodePtr copyXmlFragmentRoot(std::string_view xml, xmlDocPtr targetDoc) {
+    auto fragmentDoc = parseXmlFragmentDoc(xml);
+    auto* root = xmlDocGetRootElement(fragmentDoc.get());
+    if (root == nullptr) {
+        throw WordProcessingException("XML fragment has no root node");
+    }
+
+    auto* copied = xmlDocCopyNode(root, targetDoc, 1);
+    if (copied == nullptr) {
+        throw WordProcessingException("Unable to copy XML fragment into document");
+    }
+    return copied;
+}
+
+xmlNodePtr findWordRunForTextNode(xmlNodePtr textNode) {
+    return findAncestor(textNode, "r");
+}
+
 } // namespace
 
 struct XmlPart::Impl {
@@ -463,6 +495,77 @@ std::size_t XmlPart::insertTableRowsAtBookmark(std::string_view bookmark, const 
     return inserted;
 }
 
+bool XmlPart::replaceWordTextWithXml(std::string_view search, std::string_view replacementXml) {
+    auto* result = impl_->eval("//w:t");
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr) {
+        return false;
+    }
+
+    std::vector<WordTextNode> nodes;
+    std::string combinedText;
+    nodes.reserve(static_cast<std::size_t>(result->nodesetval->nodeNr));
+
+    for (int i = 0; i < result->nodesetval->nodeNr; ++i) {
+        auto* node = result->nodesetval->nodeTab[i];
+        if (node == nullptr || node->type != XML_ELEMENT_NODE) {
+            continue;
+        }
+
+        auto text = xmlStringToStd(xmlNodeGetContent(node));
+        const auto start = combinedText.size();
+        combinedText += text;
+        nodes.push_back({node, std::move(text), start, combinedText.size()});
+    }
+
+    const auto matches = findMatches(combinedText, search, true);
+    if (matches.empty()) {
+        return false;
+    }
+
+    const auto& match = matches.front();
+    const auto matchStart = match.position;
+    const auto matchEnd = match.position + match.length;
+    const auto firstNode = firstOverlappingNode(nodes, matchStart, matchEnd);
+    const auto lastNode = lastOverlappingNode(nodes, matchStart, matchEnd);
+    if (firstNode == nodes.size() || lastNode == nodes.size()) {
+        return false;
+    }
+
+    auto* runNode = findWordRunForTextNode(nodes[firstNode].node);
+    if (runNode == nullptr || runNode->parent == nullptr) {
+        throw WordProcessingException("Unable to locate Word run for image placeholder");
+    }
+
+    const auto prefixLength = matchStart - nodes[firstNode].start;
+    const auto suffixOffset = matchEnd - nodes[lastNode].start;
+    const auto prefix = nodes[firstNode].text.substr(0, prefixLength);
+    const auto suffix = suffixOffset < nodes[lastNode].text.size()
+        ? nodes[lastNode].text.substr(suffixOffset)
+        : std::string{};
+    nodes[firstNode].text = prefix;
+    for (std::size_t nodeIndex = firstNode + 1; nodeIndex < lastNode; ++nodeIndex) {
+        nodes[nodeIndex].text.clear();
+    }
+    nodes[lastNode].text = firstNode == lastNode ? prefix + suffix : suffix;
+
+    for (const auto& node : nodes) {
+        xmlNodeSetContent(node.node, reinterpret_cast<const xmlChar*>(node.text.c_str()));
+    }
+
+    std::unique_ptr<xmlNode, decltype(&xmlFreeNode)> replacementNode(
+        copyXmlFragmentRoot(replacementXml, impl_->doc),
+        xmlFreeNode
+    );
+    auto* inserted = xmlAddNextSibling(runNode, replacementNode.get());
+    if (inserted == nullptr) {
+        throw WordProcessingException("Unable to insert image drawing XML");
+    }
+    replacementNode.release();
+
+    return true;
+}
+
 void XmlPart::setTextByXPath(std::string_view xpath, std::string_view value) {
     auto* result = impl_->eval(xpath);
     const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
@@ -470,6 +573,34 @@ void XmlPart::setTextByXPath(std::string_view xpath, std::string_view value) {
         throw XmlException("XPath did not match any XML nodes");
     }
     xmlNodeSetContent(result->nodesetval->nodeTab[0], reinterpret_cast<const xmlChar*>(std::string(value).c_str()));
+}
+
+void XmlPart::appendChildXml(std::string_view parentXPath, std::string_view childXml) {
+    auto* result = impl_->eval(parentXPath);
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("Parent XPath did not match any XML nodes");
+    }
+
+    auto* parent = result->nodesetval->nodeTab[0];
+    std::unique_ptr<xmlNode, decltype(&xmlFreeNode)> child(
+        copyXmlFragmentRoot(childXml, impl_->doc),
+        xmlFreeNode
+    );
+    auto* inserted = xmlAddChild(parent, child.get());
+    if (inserted == nullptr) {
+        throw WordProcessingException("Unable to append XML child");
+    }
+    child.release();
+}
+
+std::size_t XmlPart::countByXPath(std::string_view xpath) const {
+    auto* result = impl_->eval(xpath);
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr) {
+        return 0;
+    }
+    return static_cast<std::size_t>(result->nodesetval->nodeNr);
 }
 
 void XmlPart::setTextsByXPath(std::string_view xpath, const std::vector<std::string>& values) {

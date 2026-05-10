@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -30,6 +31,12 @@ struct ReplaceOptions {
 
 struct SaveOptions {
     bool overwrite = true;
+};
+
+struct ImageOptions {
+    std::int64_t widthEmu = 914400;
+    std::int64_t heightEmu = 914400;
+    std::string description = "CppWordKit image";
 };
 
 } // namespace cppwordkit

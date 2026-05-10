@@ -57,6 +57,11 @@ public:
     void fillTable(std::size_t tableIndex, const TableData& data);
     void fillFirstTable(const TableData& data);
     std::size_t insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows);
+    bool insertImageAtPlaceholder(
+        std::string_view placeholder,
+        const Path& imagePath,
+        const ImageOptions& options = {}
+    );
 
     [[nodiscard]] XmlPart& mainDocumentPart();
     [[nodiscard]] const XmlPart& mainDocumentPart() const;
