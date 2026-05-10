@@ -128,13 +128,16 @@ void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
     if (!style.fontFamily &&
         !style.colorHex &&
         !style.backgroundColorHex &&
+        !style.highlightColor &&
+        !style.borderColorHex &&
         !style.fontSizeHalfPoints &&
         !style.bold &&
         !style.italic &&
         !style.underline &&
         !style.strike &&
         !style.superscript &&
-        !style.subscript) {
+        !style.subscript &&
+        !style.enclosedCircle) {
         return;
     }
 
@@ -148,6 +151,12 @@ void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
     }
     if (style.backgroundColorHex) {
         xml << "<w:shd w:fill=\"" << xmlAttributeEscape(*style.backgroundColorHex) << "\"/>";
+    }
+    if (style.highlightColor) {
+        xml << "<w:highlight w:val=\"" << xmlAttributeEscape(*style.highlightColor) << "\"/>";
+    }
+    if (style.borderColorHex) {
+        xml << "<w:bdr w:val=\"single\" w:color=\"" << xmlAttributeEscape(*style.borderColorHex) << "\"/>";
     }
     if (style.fontSizeHalfPoints) {
         xml << "<w:sz w:val=\"" << *style.fontSizeHalfPoints << "\"/>";
@@ -183,6 +192,9 @@ void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
         xml << "<w:vertAlign w:val=\"subscript\"/>";
     } else if (style.superscript || style.subscript) {
         xml << "<w:vertAlign w:val=\"baseline\"/>";
+    }
+    if (style.enclosedCircle && *style.enclosedCircle) {
+        xml << "<w:em w:val=\"circle\"/>";
     }
     xml << "</w:rPr>";
 }

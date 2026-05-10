@@ -128,10 +128,15 @@ void MainWindow::setupStatusBar()
     filePathLabel_ = new QLabel("未命名文档");
     modifiedLabel_ = new QLabel("");
     messageLabel_ = new QLabel("");
+    zoomLabel_ = new QLabel(this);
+    zoomLabel_->setMinimumWidth(72);
+    zoomLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     statusBar()->addWidget(filePathLabel_, 2);
     statusBar()->addWidget(modifiedLabel_, 1);
     statusBar()->addWidget(messageLabel_, 3);
+    statusBar()->addPermanentWidget(zoomLabel_);
+    updateZoomLabel();
 }
 
 void MainWindow::setupEditor()
@@ -148,6 +153,9 @@ void MainWindow::connectSignals()
     // 监听编辑器文档的修改状态变化，同步到控制器
     connect(editor_->document(), &QTextDocument::modificationChanged,
             this, &MainWindow::onEditorModified);
+    connect(editor_, &PageView::zoomChanged, this, [this](qreal) {
+        updateZoomLabel();
+    });
 
     // 控制器修改状态变化时更新状态栏和标题栏
     connect(controller_, &DocumentController::modifiedChanged, this, [this](bool modified) {
@@ -428,6 +436,12 @@ void MainWindow::updateTitle()
 /**
  * 从控制器模型导入到 QTextDocument，包括页面尺寸和边距
  */
+void MainWindow::updateZoomLabel()
+{
+    const int percent = qRound(editor_->displayZoom() * 100.0);
+    zoomLabel_->setText(QString("缩放 %1%").arg(percent));
+}
+
 void MainWindow::doImport()
 {
     if (!controller_->wordDocument()) return;
@@ -440,6 +454,9 @@ void MainWindow::doImport()
         QSizeF size(*model.pageSetup.pageWidthTwips / 20.0,
                     *model.pageSetup.pageHeightTwips / 20.0);
         editor_->setPageSize(size);
+    } else {
+        // 新建空白文档或缺少页面设置的文档，默认按 A4 显示。
+        editor_->setPageSize(PageSizes::A4());
     }
     // 恢复页边距
     if (model.pageSetup.marginLeftTwips || model.pageSetup.marginTopTwips ||

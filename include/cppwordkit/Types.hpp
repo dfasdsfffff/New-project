@@ -88,6 +88,8 @@ struct TextStyle {
     std::optional<std::string> fontFamily;          ///< 字体族名称
     std::optional<std::string> colorHex;            ///< 文字颜色（十六进制，不含 #）
     std::optional<std::string> backgroundColorHex;  ///< 文字背景色（w:shd w:fill）
+    std::optional<std::string> highlightColor;      ///< 高亮颜色（w:highlight w:val）
+    std::optional<std::string> borderColorHex;      ///< 字符边框颜色（w:bdr w:color）
     std::optional<std::int32_t> fontSizeHalfPoints; ///< 字号（半点，24 = 12pt）
     std::optional<bool> bold;                       ///< 粗体（w:b）
     std::optional<bool> italic;                     ///< 斜体（w:i）
@@ -95,6 +97,7 @@ struct TextStyle {
     std::optional<bool> strike;                     ///< 删除线（w:strike）
     std::optional<bool> superscript;                ///< 上标（w:vertAlign val="superscript"）
     std::optional<bool> subscript;                  ///< 下标（w:vertAlign val="subscript"）
+    std::optional<bool> enclosedCircle;             ///< 带圈字符（w:em val="circle" 的最小实现）
 };
 
 /// @brief 段落级样式（对应 OOXML w:pPr 下的元素）

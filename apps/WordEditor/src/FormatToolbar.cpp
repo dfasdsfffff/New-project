@@ -12,6 +12,22 @@
 #include <QToolButton>
 #include <QWidgetAction>
 #include <QHBoxLayout>
+#include <QPen>
+
+namespace {
+
+constexpr int HighlightColorProperty = QTextFormat::UserProperty + 101;
+constexpr int BorderColorProperty = QTextFormat::UserProperty + 102;
+constexpr int EnclosedCircleProperty = QTextFormat::UserProperty + 103;
+constexpr int ShadingColorProperty = QTextFormat::UserProperty + 104;
+
+void addHighlightColor(QMenu& menu, const QString& name, const QString& value)
+{
+    QAction* action = menu.addAction(name);
+    action->setData(value);
+}
+
+} // namespace
 
 FormatToolbar::FormatToolbar(QWidget* parent)
     : QToolBar("格式", parent)
@@ -82,11 +98,44 @@ void FormatToolbar::setupUi()
     colorFont.setBold(true);
     textColorAction_->setFont(colorFont);
 
-    backgroundColorAction_ = addAction("A");
-    backgroundColorAction_->setToolTip("背景颜色");
+    backgroundColorAction_ = addAction("底");
+    backgroundColorAction_->setToolTip("字符底纹");
     QFont bgFont = backgroundColorAction_->font();
     bgFont.setBold(true);
     backgroundColorAction_->setFont(bgFont);
+
+    highlightMenu_ = new QMenu(this);
+    addHighlightColor(*highlightMenu_, "黄色", "yellow");
+    addHighlightColor(*highlightMenu_, "绿色", "green");
+    addHighlightColor(*highlightMenu_, "青色", "cyan");
+    addHighlightColor(*highlightMenu_, "红色", "red");
+    addHighlightColor(*highlightMenu_, "蓝色", "blue");
+    addHighlightColor(*highlightMenu_, "无高亮", "none");
+    highlightAction_ = addAction("H");
+    highlightAction_->setToolTip("高亮显示");
+    if (auto* button = qobject_cast<QToolButton*>(widgetForAction(highlightAction_))) {
+        button->setMenu(highlightMenu_);
+        button->setPopupMode(QToolButton::InstantPopup);
+    }
+
+    borderAction_ = addAction("□");
+    borderAction_->setCheckable(true);
+    borderAction_->setToolTip("字符边框");
+
+    enclosedCircleAction_ = addAction("○");
+    enclosedCircleAction_->setCheckable(true);
+    enclosedCircleAction_->setToolTip("带圈字符");
+
+    changeCaseMenu_ = new QMenu(this);
+    upperCaseAction_ = changeCaseMenu_->addAction("大写");
+    lowerCaseAction_ = changeCaseMenu_->addAction("小写");
+    titleCaseAction_ = changeCaseMenu_->addAction("首字母大写");
+    QAction* changeCaseAction = addAction("Aa");
+    changeCaseAction->setToolTip("更改大小写");
+    if (auto* button = qobject_cast<QToolButton*>(widgetForAction(changeCaseAction))) {
+        button->setMenu(changeCaseMenu_);
+        button->setPopupMode(QToolButton::InstantPopup);
+    }
 
     // 对齐按钮组：使用 QActionGroup 保持互斥选择
     addSeparator();

@@ -50,6 +50,7 @@ private:
     void connectSignals();  // 连接控制器信号到界面更新槽函数
     void updateTitle();     // 根据文件名和修改状态刷新窗口标题
 
+    void updateZoomLabel(); // 更新状态栏中的页面缩放比例
     void doImport();  // 从控制器模型导入到 QTextDocument
     void doExport();  // 从 QTextDocument 导出回控制器模型
 
@@ -62,6 +63,7 @@ private:
     QLabel* filePathLabel_;     ///< 状态栏：当前文件路径
     QLabel* modifiedLabel_;     ///< 状态栏：文档修改状态指示
     QLabel* messageLabel_;      ///< 状态栏：操作提示消息
+    QLabel* zoomLabel_;         ///< 状态栏：页面缩放比例
 
     QMenu* fileMenu_;
     QMenu* editMenu_;

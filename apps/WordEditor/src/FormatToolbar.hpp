@@ -7,6 +7,7 @@
 #include <QComboBox>
 #include <QAction>
 #include <QColor>
+#include <QMenu>
 #include <QTextCharFormat>
 #include <QTextBlockFormat>
 #include <QLabel>
@@ -37,6 +38,10 @@ private slots:
     void onStrikeToggled(bool checked);                  ///< 删除线开关
     void onTextColorClicked();                           ///< 文字颜色选择
     void onBackgroundColorClicked();                     ///< 背景颜色选择
+    void onHighlightSelected(QAction* action);            ///< 高亮颜色选择
+    void onBorderToggled(bool checked);                   ///< 字符边框开关
+    void onEnclosedCircleToggled(bool checked);           ///< 带圈字符开关
+    void onChangeCaseSelected(QAction* action);           ///< 大小写转换
     void onAlignmentChanged(QAction* action);            ///< 段落对齐切换
     /// 响应编辑器光标/格式变化，同步工具栏状态
     void updateStateFromEditor();
@@ -53,6 +58,14 @@ private:
     QAction* strikeAction_;              ///< 删除线按钮
     QAction* textColorAction_;           ///< 文字颜色按钮
     QAction* backgroundColorAction_;     ///< 背景颜色按钮
+    QAction* highlightAction_;           ///< 高亮颜色按钮
+    QAction* borderAction_;              ///< 字符边框按钮
+    QAction* enclosedCircleAction_;      ///< 带圈字符按钮
+    QAction* upperCaseAction_;           ///< 转为大写
+    QAction* lowerCaseAction_;           ///< 转为小写
+    QAction* titleCaseAction_;           ///< 首字母大写
+    QMenu* highlightMenu_;               ///< 高亮颜色菜单
+    QMenu* changeCaseMenu_;              ///< 大小写菜单
     QAction* alignLeftAction_;           ///< 左对齐按钮
     QAction* alignCenterAction_;         ///< 居中对齐按钮
     QAction* alignRightAction_;          ///< 右对齐按钮

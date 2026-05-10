@@ -14,6 +14,39 @@
 #include <QStyleOption>
 #include <QApplication>
 
+#include <utility>
+
+namespace {
+
+QString toTitleCase(QString text)
+{
+    bool nextWord = true;
+    for (QChar& ch : text) {
+        if (ch.isLetter()) {
+            ch = nextWord ? ch.toUpper() : ch.toLower();
+            nextWord = false;
+        } else {
+            nextWord = ch.isSpace() || ch.isPunct();
+        }
+    }
+    return text;
+}
+
+QString transformCase(QString text, PageView::TextCaseTransform transform)
+{
+    switch (transform) {
+    case PageView::TextCaseTransform::Upper:
+        return text.toUpper();
+    case PageView::TextCaseTransform::Lower:
+        return text.toLower();
+    case PageView::TextCaseTransform::Title:
+        return toTitleCase(std::move(text));
+    }
+    return text;
+}
+
+} // namespace
+
 // ═══════════════════════════════════════════════════════════════
 // 构造与析构
 // ═══════════════════════════════════════════════════════════════
@@ -84,6 +117,8 @@ void PageView::setZoom(qreal zoom)
 }
 
 qreal PageView::zoom() const { return zoom_; }
+
+qreal PageView::displayZoom() const { return effectiveZoom(); }
 
 qreal PageView::effectiveZoom() const
 {
@@ -245,6 +280,31 @@ void PageView::selectAll()
     viewport()->update();
 }
 
+void PageView::applyTextCase(TextCaseTransform transform)
+{
+    QTextCursor cursor(doc_);
+    if (selectionAnchor_ >= 0 && selectionAnchor_ != cursorPosition_) {
+        cursor.setPosition(selectionAnchor_, QTextCursor::MoveAnchor);
+        cursor.setPosition(cursorPosition_, QTextCursor::KeepAnchor);
+    } else {
+        cursor.setPosition(cursorPosition_);
+        cursor.select(QTextCursor::WordUnderCursor);
+    }
+
+    if (!cursor.hasSelection()) {
+        return;
+    }
+
+    const QString replacement = transformCase(cursor.selectedText(), transform);
+    cursor.insertText(replacement, cursor.charFormat());
+    cursorPosition_ = cursor.position();
+    selectionAnchor_ = -1;
+    updateLayout();
+    viewport()->update();
+    emit cursorPositionChanged();
+    emit currentCharFormatChanged(currentCharFormat());
+}
+
 QTextBlockFormat PageView::blockFormat() const
 {
     QTextCursor c(doc_);
@@ -294,6 +354,7 @@ void PageView::updateLayout()
     }
 
     updateScrollBars();
+    emit zoomChanged(z);
 }
 
 QRectF PageView::pageScreenRect(int pageIndex) const
@@ -537,7 +598,7 @@ void PageView::drawCursor(QPainter& painter)
 void PageView::resizeEvent(QResizeEvent* event)
 {
     QAbstractScrollArea::resizeEvent(event);
-    updateScrollBars();
+    updateLayout();
 }
 
 void PageView::mousePressEvent(QMouseEvent* event)

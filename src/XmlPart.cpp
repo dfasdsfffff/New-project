@@ -49,6 +49,15 @@ bool isHexColor(std::string_view value) {
     });
 }
 
+bool isHighlightColor(std::string_view value) {
+    return value == "black" || value == "blue" || value == "cyan" ||
+        value == "green" || value == "magenta" || value == "red" ||
+        value == "yellow" || value == "white" || value == "darkBlue" ||
+        value == "darkCyan" || value == "darkGreen" || value == "darkMagenta" ||
+        value == "darkRed" || value == "darkYellow" || value == "darkGray" ||
+        value == "lightGray" || value == "none";
+}
+
 std::string upperAscii(std::string_view value) {
     std::string result(value.begin(), value.end());
     std::ranges::transform(result, result.begin(), [](unsigned char ch) {
@@ -865,6 +874,24 @@ void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, cons
         setWAttribute(shading, "fill", color);
     }
 
+    if (style.highlightColor) {
+        if (!isHighlightColor(*style.highlightColor)) {
+            throw WordProcessingException("Highlight color is not a supported Word highlight value");
+        }
+        auto* highlight = ensureChild(runProperties, "highlight");
+        setWAttribute(highlight, "val", *style.highlightColor);
+    }
+
+    if (style.borderColorHex) {
+        const auto color = upperAscii(*style.borderColorHex);
+        if (!isHexColor(color)) {
+            throw WordProcessingException("Character border color must be a 6-digit RGB hex value");
+        }
+        auto* border = ensureChild(runProperties, "bdr");
+        setWAttribute(border, "val", "single");
+        setWAttribute(border, "color", color);
+    }
+
     if (style.fontSizeHalfPoints) {
         auto* size = ensureChild(runProperties, "sz");
         setWAttribute(size, "val", std::to_string(*style.fontSizeHalfPoints));
@@ -892,6 +919,10 @@ void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, cons
         } else {
             setWAttribute(verticalAlign, "val", "baseline");
         }
+    }
+    if (style.enclosedCircle) {
+        auto* emphasis = ensureChild(runProperties, "em");
+        setWAttribute(emphasis, "val", *style.enclosedCircle ? "circle" : "none");
     }
 }
 
@@ -938,6 +969,23 @@ TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) co
         }
     }
 
+    auto* highlight = firstChildElement(runProperties, "highlight");
+    if (highlight != nullptr) {
+        const auto value = wAttributeValue(highlight, "val");
+        if (!value.empty() && value != "none") {
+            style.highlightColor = value;
+        }
+    }
+
+    auto* border = firstChildElement(runProperties, "bdr");
+    if (border != nullptr) {
+        const auto value = wAttributeValue(border, "color");
+        const auto kind = wAttributeValue(border, "val");
+        if (!value.empty() && value != "auto" && kind != "none" && kind != "nil") {
+            style.borderColorHex = value;
+        }
+    }
+
     auto* size = firstChildElement(runProperties, "sz");
     if (size != nullptr) {
         style.fontSizeHalfPoints = parseInt(wAttributeValue(size, "val"));
@@ -959,6 +1007,11 @@ TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) co
         const auto value = wAttributeValue(verticalAlign, "val");
         style.superscript = value == "superscript";
         style.subscript = value == "subscript";
+    }
+
+    auto* emphasis = firstChildElement(runProperties, "em");
+    if (emphasis != nullptr) {
+        style.enclosedCircle = wAttributeValue(emphasis, "val") == "circle";
     }
 
     return style;

@@ -7,8 +7,39 @@
 #include <QTextObject>
 #include <QColor>
 #include <QFile>
+#include <QPen>
 #include <QTemporaryFile>
 #include <QDir>
+
+namespace {
+
+constexpr int HighlightColorProperty = QTextFormat::UserProperty + 101;
+constexpr int BorderColorProperty = QTextFormat::UserProperty + 102;
+constexpr int EnclosedCircleProperty = QTextFormat::UserProperty + 103;
+constexpr int ShadingColorProperty = QTextFormat::UserProperty + 104;
+
+QColor highlightColorToQt(const QString& value)
+{
+    if (value == "yellow") return QColor("#ffff00");
+    if (value == "green") return QColor("#00ff00");
+    if (value == "cyan") return QColor("#00ffff");
+    if (value == "magenta") return QColor("#ff00ff");
+    if (value == "blue") return QColor("#0000ff");
+    if (value == "red") return QColor("#ff0000");
+    if (value == "darkYellow") return QColor("#808000");
+    if (value == "darkGreen") return QColor("#008000");
+    if (value == "darkCyan") return QColor("#008080");
+    if (value == "darkMagenta") return QColor("#800080");
+    if (value == "darkBlue") return QColor("#000080");
+    if (value == "darkRed") return QColor("#800000");
+    if (value == "darkGray") return QColor("#808080");
+    if (value == "lightGray") return QColor("#c0c0c0");
+    if (value == "black") return QColor("#000000");
+    if (value == "white") return QColor("#ffffff");
+    return {};
+}
+
+} // namespace
 
 QtDocumentMapper::QtDocumentMapper(ImageStore& imageStore)
     : imageStore_(imageStore)
@@ -52,6 +83,25 @@ QTextCharFormat QtDocumentMapper::mapTextStyle(const cppwordkit::TextStyle& styl
     }
     if (style.backgroundColorHex) {
         fmt.setBackground(QColor(QString::fromStdString("#" + *style.backgroundColorHex)));
+        fmt.setProperty(ShadingColorProperty, QString::fromStdString(*style.backgroundColorHex));
+    }
+    if (style.highlightColor) {
+        const auto highlight = QString::fromStdString(*style.highlightColor);
+        fmt.setProperty(HighlightColorProperty, highlight);
+        if (!style.backgroundColorHex) {
+            const auto displayColor = highlightColorToQt(highlight);
+            if (displayColor.isValid()) {
+                fmt.setBackground(displayColor);
+            }
+        }
+    }
+    if (style.borderColorHex) {
+        const auto borderColor = QColor(QString::fromStdString("#" + *style.borderColorHex));
+        fmt.setProperty(BorderColorProperty, borderColor.name().mid(1));
+        fmt.setTextOutline(QPen(borderColor, 0.6));
+    }
+    if (style.enclosedCircle) {
+        fmt.setProperty(EnclosedCircleProperty, *style.enclosedCircle);
     }
 
     return fmt;
@@ -424,9 +474,20 @@ cppwordkit::TextStyle QtDocumentMapper::extractTextStyle(const QTextCharFormat& 
 
     if (fmt.hasProperty(QTextFormat::BackgroundBrush)) {
         QColor bg = fmt.background().color();
-        if (bg.isValid() && bg.alpha() > 0) {
+        if (fmt.hasProperty(ShadingColorProperty)) {
+            style.backgroundColorHex = fmt.property(ShadingColorProperty).toString().toStdString();
+        } else if (!fmt.hasProperty(HighlightColorProperty) && bg.isValid() && bg.alpha() > 0) {
             style.backgroundColorHex = bg.name().mid(1).toStdString();
         }
+    }
+    if (fmt.hasProperty(HighlightColorProperty)) {
+        style.highlightColor = fmt.property(HighlightColorProperty).toString().toStdString();
+    }
+    if (fmt.hasProperty(BorderColorProperty)) {
+        style.borderColorHex = fmt.property(BorderColorProperty).toString().toStdString();
+    }
+    if (fmt.hasProperty(EnclosedCircleProperty)) {
+        style.enclosedCircle = fmt.property(EnclosedCircleProperty).toBool();
     }
 
     return style;

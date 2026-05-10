@@ -30,6 +30,12 @@
 class PageView : public QAbstractScrollArea {
     Q_OBJECT
 public:
+    enum class TextCaseTransform {
+        Upper,
+        Lower,
+        Title
+    };
+
     explicit PageView(QWidget* parent = nullptr);
 
 signals:
@@ -37,6 +43,8 @@ signals:
     void cursorPositionChanged();
     /// 当前字符格式变化时触发
     void currentCharFormatChanged(const QTextCharFormat& format);
+    /// 页面实际显示缩放比例变化时触发
+    void zoomChanged(qreal zoom);
 
 public:
     // ---- 页面设置 ----
@@ -50,6 +58,8 @@ public:
     /// @brief 设置缩放比例（1.0 = 100%）
     void setZoom(qreal zoom);
     qreal zoom() const;
+    /// @brief 当前实际显示缩放比例；自动适配模式下返回计算后的比例
+    qreal displayZoom() const;
 
     // ---- QTextEdit 兼容接口 ----
     QTextDocument* document() const;
@@ -75,6 +85,7 @@ public:
     void copy();
     void paste();
     void selectAll();
+    void applyTextCase(TextCaseTransform transform);
 
     // 块格式操作
     QTextBlockFormat blockFormat() const;
