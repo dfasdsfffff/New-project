@@ -13,7 +13,9 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace cppwordkit {
 namespace {
@@ -25,6 +27,12 @@ std::string xmlStringToStd(xmlChar* value) {
     std::string result(reinterpret_cast<const char*>(value));
     xmlFree(value);
     return result;
+}
+
+bool isElementNamed(xmlNodePtr node, const char* localName) {
+    return node != nullptr &&
+        node->type == XML_ELEMENT_NODE &&
+        xmlStrEqual(node->name, reinterpret_cast<const xmlChar*>(localName)) == 1;
 }
 
 std::string readTextFile(const std::string& path) {
@@ -53,6 +61,143 @@ bool registerNamespace(xmlXPathContextPtr context, const char* prefix, const cha
         reinterpret_cast<const xmlChar*>(prefix),
         reinterpret_cast<const xmlChar*>(href)
     ) == 0;
+}
+
+struct WordTextNode {
+    xmlNodePtr node{};
+    std::string text;
+    std::size_t start{};
+    std::size_t end{};
+};
+
+struct TextMatch {
+    std::size_t position{};
+    std::size_t length{};
+};
+
+std::vector<TextMatch> findMatches(
+    std::string_view text,
+    std::string_view search,
+    bool matchCase
+) {
+    std::vector<TextMatch> matches;
+    if (search.empty()) {
+        return matches;
+    }
+
+    const auto haystack = matchCase ? std::string(text) : detail::lowerAscii(text);
+    const auto needle = matchCase ? std::string(search) : detail::lowerAscii(search);
+    std::size_t position = 0;
+    while ((position = haystack.find(needle, position)) != std::string::npos) {
+        matches.push_back({position, search.size()});
+        position += search.size();
+    }
+    return matches;
+}
+
+std::size_t firstOverlappingNode(
+    const std::vector<WordTextNode>& nodes,
+    std::size_t matchStart,
+    std::size_t matchEnd
+) {
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        if (nodes[i].end > matchStart && nodes[i].start < matchEnd) {
+            return i;
+        }
+    }
+    return nodes.size();
+}
+
+std::size_t lastOverlappingNode(
+    const std::vector<WordTextNode>& nodes,
+    std::size_t matchStart,
+    std::size_t matchEnd
+) {
+    for (std::size_t i = nodes.size(); i > 0; --i) {
+        const auto index = i - 1;
+        if (nodes[index].end > matchStart && nodes[index].start < matchEnd) {
+            return index;
+        }
+    }
+    return nodes.size();
+}
+
+std::string normalizeTableBookmark(std::string_view bookmark) {
+    if (bookmark.empty()) {
+        throw WordProcessingException("Table row bookmark must not be empty");
+    }
+
+    if (bookmark.size() >= 3 &&
+        bookmark.substr(0, 2) == "${" &&
+        bookmark.back() == '}') {
+        return std::string(bookmark);
+    }
+
+    return "${" + std::string(bookmark) + "}";
+}
+
+xmlNodePtr findAncestor(xmlNodePtr node, const char* localName) {
+    for (auto* current = node; current != nullptr; current = current->parent) {
+        if (isElementNamed(current, localName)) {
+            return current;
+        }
+    }
+    return nullptr;
+}
+
+void collectChildElements(xmlNodePtr parent, const char* localName, std::vector<xmlNodePtr>& out) {
+    if (parent == nullptr) {
+        return;
+    }
+
+    for (auto* child = parent->children; child != nullptr; child = child->next) {
+        if (isElementNamed(child, localName)) {
+            out.push_back(child);
+        }
+    }
+}
+
+void collectDescendants(xmlNodePtr parent, const char* localName, std::vector<xmlNodePtr>& out) {
+    if (parent == nullptr) {
+        return;
+    }
+
+    for (auto* child = parent->children; child != nullptr; child = child->next) {
+        if (isElementNamed(child, localName)) {
+            out.push_back(child);
+        }
+        collectDescendants(child, localName, out);
+    }
+}
+
+void fillTableRow(xmlNodePtr row, const TableRow& data) {
+    std::vector<xmlNodePtr> cells;
+    collectChildElements(row, "tc", cells);
+
+    const auto cellCount = std::min(cells.size(), data.size());
+    for (std::size_t cellIndex = 0; cellIndex < cellCount; ++cellIndex) {
+        std::vector<xmlNodePtr> textNodes;
+        collectDescendants(cells[cellIndex], "t", textNodes);
+        if (textNodes.empty()) {
+            continue;
+        }
+
+        xmlNodeSetContent(textNodes.front(), reinterpret_cast<const xmlChar*>(data[cellIndex].text.c_str()));
+        for (std::size_t textIndex = 1; textIndex < textNodes.size(); ++textIndex) {
+            xmlNodeSetContent(textNodes[textIndex], reinterpret_cast<const xmlChar*>(""));
+        }
+    }
+}
+
+void removeBookmarkText(xmlNodePtr row, std::string_view bookmark) {
+    std::vector<xmlNodePtr> textNodes;
+    collectDescendants(row, "t", textNodes);
+    for (auto* textNode : textNodes) {
+        auto text = xmlStringToStd(xmlNodeGetContent(textNode));
+        if (detail::replaceAllInString(text, bookmark, "", true, false) > 0) {
+            xmlNodeSetContent(textNode, reinterpret_cast<const xmlChar*>(text.c_str()));
+        }
+    }
 }
 
 } // namespace
@@ -212,6 +357,110 @@ bool XmlPart::replaceText(std::string_view search, std::string_view replacement,
     }
 
     return changed;
+}
+
+bool XmlPart::replaceWordText(std::string_view search, std::string_view replacement, bool matchCase) {
+    auto* result = impl_->eval("//w:t");
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr) {
+        return false;
+    }
+
+    std::vector<WordTextNode> nodes;
+    std::string combinedText;
+    nodes.reserve(static_cast<std::size_t>(result->nodesetval->nodeNr));
+
+    for (int i = 0; i < result->nodesetval->nodeNr; ++i) {
+        auto* node = result->nodesetval->nodeTab[i];
+        if (node == nullptr || node->type != XML_ELEMENT_NODE) {
+            continue;
+        }
+
+        auto text = xmlStringToStd(xmlNodeGetContent(node));
+        const auto start = combinedText.size();
+        combinedText += text;
+        nodes.push_back({node, std::move(text), start, combinedText.size()});
+    }
+
+    const auto matches = findMatches(combinedText, search, matchCase);
+    if (matches.empty()) {
+        return false;
+    }
+
+    for (auto matchIt = matches.rbegin(); matchIt != matches.rend(); ++matchIt) {
+        const auto matchStart = matchIt->position;
+        const auto matchEnd = matchIt->position + matchIt->length;
+        const auto firstNode = firstOverlappingNode(nodes, matchStart, matchEnd);
+        const auto lastNode = lastOverlappingNode(nodes, matchStart, matchEnd);
+        if (firstNode == nodes.size() || lastNode == nodes.size()) {
+            continue;
+        }
+
+        const auto prefixLength = matchStart - nodes[firstNode].start;
+        const auto suffixOffset = matchEnd - nodes[lastNode].start;
+        const auto prefix = nodes[firstNode].text.substr(0, prefixLength);
+        const auto suffix = suffixOffset < nodes[lastNode].text.size()
+            ? nodes[lastNode].text.substr(suffixOffset)
+            : std::string{};
+        nodes[firstNode].text = prefix + std::string(replacement) + suffix;
+        for (std::size_t nodeIndex = firstNode + 1; nodeIndex <= lastNode; ++nodeIndex) {
+            nodes[nodeIndex].text.clear();
+        }
+    }
+
+    for (const auto& node : nodes) {
+        xmlNodeSetContent(node.node, reinterpret_cast<const xmlChar*>(node.text.c_str()));
+    }
+
+    return true;
+}
+
+std::size_t XmlPart::insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows) {
+    const auto normalizedBookmark = normalizeTableBookmark(bookmark);
+    auto* result = impl_->eval("//w:t");
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr) {
+        return 0;
+    }
+
+    xmlNodePtr templateRow = nullptr;
+    for (int i = 0; i < result->nodesetval->nodeNr; ++i) {
+        auto* textNode = result->nodesetval->nodeTab[i];
+        auto text = xmlStringToStd(xmlNodeGetContent(textNode));
+        if (text.find(normalizedBookmark) == std::string::npos) {
+            continue;
+        }
+
+        templateRow = findAncestor(textNode, "tr");
+        break;
+    }
+
+    if (templateRow == nullptr) {
+        throw WordProcessingException("Table row bookmark not found: " + normalizedBookmark);
+    }
+
+    xmlNodePtr insertionPoint = templateRow;
+    std::size_t inserted = 0;
+    for (const auto& rowData : rows) {
+        std::unique_ptr<xmlNode, decltype(&xmlFreeNode)> clonedRow(xmlCopyNode(templateRow, 1), xmlFreeNode);
+        if (!clonedRow) {
+            throw WordProcessingException("Unable to deep copy table row XML node");
+        }
+
+        removeBookmarkText(clonedRow.get(), normalizedBookmark);
+        fillTableRow(clonedRow.get(), rowData);
+        auto* insertedNode = xmlAddNextSibling(insertionPoint, clonedRow.get());
+        if (insertedNode == nullptr) {
+            throw WordProcessingException("Unable to insert copied table row XML node");
+        }
+
+        clonedRow.release();
+        insertionPoint = insertedNode;
+        ++inserted;
+    }
+
+    removeBookmarkText(templateRow, normalizedBookmark);
+    return inserted;
 }
 
 void XmlPart::setTextByXPath(std::string_view xpath, std::string_view value) {

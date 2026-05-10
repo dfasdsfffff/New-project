@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cppwordkit/Types.hpp"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,6 +35,8 @@ public:
     [[nodiscard]] std::vector<std::string> textsByXPath(std::string_view xpath) const;
 
     bool replaceText(std::string_view search, std::string_view replacement, bool matchCase = true);
+    bool replaceWordText(std::string_view search, std::string_view replacement, bool matchCase = true);
+    std::size_t insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows);
 
     void setTextByXPath(std::string_view xpath, std::string_view value);
     void setTextsByXPath(std::string_view xpath, const std::vector<std::string>& values);

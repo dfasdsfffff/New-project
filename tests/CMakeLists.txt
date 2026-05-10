@@ -1,6 +1,7 @@
 function(cppwordkit_add_test name source)
     add_executable(${name} ${source})
     target_link_libraries(${name} PRIVATE CppWordKit::CppWordKit)
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
     add_test(NAME ${name} COMMAND ${name})
 
     if(CPPWORDKIT_USE_LOCAL_DEPS)

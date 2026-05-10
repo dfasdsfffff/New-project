@@ -11,14 +11,19 @@ public:
         : std::runtime_error(message) {}
 };
 
+class WordProcessingException : public WordException {
+public:
+    using WordException::WordException;
+};
+
 class PackageException : public WordException {
 public:
     using WordException::WordException;
 };
 
-class XmlException : public WordException {
+class XmlException : public WordProcessingException {
 public:
-    using WordException::WordException;
+    using WordProcessingException::WordProcessingException;
 };
 
 } // namespace cppwordkit

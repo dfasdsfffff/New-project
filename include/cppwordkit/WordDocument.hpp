@@ -2,6 +2,7 @@
 
 #include "cppwordkit/Types.hpp"
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,6 +37,9 @@ public:
     [[nodiscard]] std::string text() const;
     [[nodiscard]] std::vector<TextRun> textRuns() const;
 
+    bool ReplaceText(const std::string& placeholder, const std::string& value);
+    std::size_t ReplaceText(const std::map<std::string, std::string>& replacements);
+
     bool replaceText(
         std::string_view search,
         std::string_view replacement,
@@ -52,6 +56,7 @@ public:
 
     void fillTable(std::size_t tableIndex, const TableData& data);
     void fillFirstTable(const TableData& data);
+    std::size_t insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows);
 
     [[nodiscard]] XmlPart& mainDocumentPart();
     [[nodiscard]] const XmlPart& mainDocumentPart() const;

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace cppwordkit {
@@ -33,6 +34,20 @@ void ensureTableIndex(std::size_t tableIndex, std::size_t tableCount) {
     if (tableIndex >= tableCount) {
         throw WordException("Table index is out of range");
     }
+}
+
+std::string normalizePlaceholder(std::string_view placeholder) {
+    if (placeholder.empty()) {
+        throw WordException("Placeholder must not be empty");
+    }
+
+    if (placeholder.size() >= 4 &&
+        placeholder.substr(0, 2) == "{{" &&
+        placeholder.substr(placeholder.size() - 2) == "}}") {
+        return std::string(placeholder);
+    }
+
+    return "{{" + std::string(placeholder) + "}}";
 }
 
 } // namespace
@@ -112,13 +127,27 @@ std::vector<TextRun> WordDocument::textRuns() const {
     return runs;
 }
 
+bool WordDocument::ReplaceText(const std::string& placeholder, const std::string& value) {
+    return mainDocumentPart().replaceWordText(normalizePlaceholder(placeholder), value);
+}
+
+std::size_t WordDocument::ReplaceText(const std::map<std::string, std::string>& replacements) {
+    std::size_t changedPatterns = 0;
+    for (const auto& [placeholder, value] : replacements) {
+        if (ReplaceText(placeholder, value)) {
+            ++changedPatterns;
+        }
+    }
+    return changedPatterns;
+}
+
 bool WordDocument::replaceText(
     std::string_view search,
     std::string_view replacement,
     const ReplaceOptions& options
 ) {
     if (!options.wholeWord) {
-        return mainDocumentPart().replaceText(search, replacement, options.matchCase);
+        return mainDocumentPart().replaceWordText(search, replacement, options.matchCase);
     }
 
     bool changed = false;
@@ -192,6 +221,10 @@ void WordDocument::fillTable(std::size_t tableIndex, const TableData& data) {
 
 void WordDocument::fillFirstTable(const TableData& data) {
     fillTable(0, data);
+}
+
+std::size_t WordDocument::insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows) {
+    return mainDocumentPart().insertTableRowsAtBookmark(bookmark, rows);
 }
 
 XmlPart& WordDocument::mainDocumentPart() {
