@@ -8,6 +8,7 @@ project(CppWordKit
 
 option(CPPWORDKIT_BUILD_TESTS "Build CppWordKit tests" ON)
 option(CPPWORDKIT_BUILD_EXAMPLES "Build CppWordKit examples" ON)
+option(CPPWORDKIT_BUILD_WORD_EDITOR "Build Qt6 Word Editor application" OFF)
 option(CPPWORDKIT_USE_LOCAL_DEPS "Use locally downloaded MinGW dependencies" OFF)
 
 set(CPPWORDKIT_LOCAL_LIBXML2_ROOT "D:/libraries/MinGW/libxml2-v2.12.10"
@@ -156,4 +157,9 @@ endif()
 
 if(CPPWORDKIT_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(CPPWORDKIT_BUILD_WORD_EDITOR)
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
+    add_subdirectory(apps/WordEditor)
 endif()

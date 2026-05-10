@@ -24,6 +24,7 @@ public:
     [[nodiscard]] const XmlPart& xmlPart(std::string_view name) const;
     [[nodiscard]] std::optional<XmlPart*> findXmlPart(std::string_view name);
     [[nodiscard]] std::vector<std::string> partNames() const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> rawPart(std::string_view name) const;
     [[nodiscard]] std::string addImagePart(const Path& imagePath);
     [[nodiscard]] std::string addMainDocumentRelationship(std::string_view type, std::string_view target);
     void ensureContentTypeDefault(std::string_view extension, std::string_view contentType);

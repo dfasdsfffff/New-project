@@ -736,4 +736,8 @@ std::vector<std::string> WordDocument::partNames() const {
     return impl_->package.partNames();
 }
 
+std::optional<std::vector<std::uint8_t>> WordDocument::rawPart(std::string_view packagePath) const {
+    return impl_->package.rawPart(packagePath);
+}
+
 } // namespace cppwordkit

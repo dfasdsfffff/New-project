@@ -92,6 +92,7 @@ public:
 
     [[nodiscard]] std::optional<XmlPart*> part(std::string_view packagePath);
     [[nodiscard]] std::vector<std::string> partNames() const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> rawPart(std::string_view packagePath) const;
 
 private:
     struct Impl;

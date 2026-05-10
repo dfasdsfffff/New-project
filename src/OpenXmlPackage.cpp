@@ -159,6 +159,14 @@ std::vector<std::string> OpenXmlPackage::partNames() const {
     return names;
 }
 
+std::optional<std::vector<std::uint8_t>> OpenXmlPackage::rawPart(std::string_view name) const {
+    const auto key = std::string(name);
+    if (!archive_.contains(key)) {
+        return std::nullopt;
+    }
+    return archive_.bytes(key);
+}
+
 std::string OpenXmlPackage::addImagePart(const Path& imagePath) {
     const auto extension = stripLeadingDot(imagePath.extension().string());
     const auto contentType = imageContentType(extension);
