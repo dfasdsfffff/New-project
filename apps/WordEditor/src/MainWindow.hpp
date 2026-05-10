@@ -3,7 +3,6 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QTextEdit>
 #include <QLabel>
 #include <QMenuBar>
 #include <QStatusBar>
@@ -12,6 +11,7 @@
 #include "QtDocumentMapper.hpp"
 #include "ImageStore.hpp"
 #include "FormatToolbar.hpp"
+#include "PageView.hpp"
 
 /**
  * @brief 应用程序主窗口
@@ -39,19 +39,21 @@ private slots:
     void onEditorModified();
     /// 同步控制器状态到界面
     void updateStatusFromController();
+    /// 页面设置对话框
+    void onPageSetup();
 
 private:
     void setupMenus();      // 构建菜单栏，包括文件、编辑、插入菜单
     void setupToolbars();   // 将格式工具栏添加到主窗口
     void setupStatusBar();  // 初始化状态栏：文件路径、修改状态、消息提示
-    void setupEditor();     // 将 QTextEdit 设为中心控件并配置默认字体
+    void setupEditor();     // 将 PageView 设为中心控件并配置默认字体和页面尺寸
     void connectSignals();  // 连接控制器信号到界面更新槽函数
     void updateTitle();     // 根据文件名和修改状态刷新窗口标题
 
     void doImport();  // 从控制器模型导入到 QTextDocument
     void doExport();  // 从 QTextDocument 导出回控制器模型
 
-    QTextEdit* editor_;                 ///< 富文本编辑器核心控件
+    PageView* editor_;                   ///< 分页文档编辑器核心控件（替换 QTextEdit）
     FormatToolbar* formatToolbar_;       ///< 格式工具栏（字体、字号、样式、对齐）
     DocumentController* controller_;     ///< 文档控制器，管理底层 WordDocument 生命周期
     ImageStore* imageStore_;             ///< 图片资源管理器，暂存文档中的图片数据
@@ -81,4 +83,5 @@ private:
 
     QAction* insertImageAction_;
     QAction* insertTableAction_;
+    QAction* pageSetupAction_;
 };

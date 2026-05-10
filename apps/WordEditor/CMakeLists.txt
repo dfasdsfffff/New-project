@@ -13,6 +13,7 @@ set(EDITOR_SOURCES
     src/QtDocumentMapper.cpp
     src/ImageStore.cpp
     src/FormatToolbar.cpp
+    src/PageView.cpp
 )
 
 set(EDITOR_HEADERS
@@ -21,6 +22,7 @@ set(EDITOR_HEADERS
     src/QtDocumentMapper.hpp
     src/ImageStore.hpp
     src/FormatToolbar.hpp
+    src/PageView.hpp
 )
 
 add_executable(${EDITOR_TARGET} ${EDITOR_SOURCES} ${EDITOR_HEADERS})

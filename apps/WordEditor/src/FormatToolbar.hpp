@@ -6,9 +6,12 @@
 #include <QFontComboBox>
 #include <QComboBox>
 #include <QAction>
-#include <QTextEdit>
 #include <QColor>
+#include <QTextCharFormat>
+#include <QTextBlockFormat>
 #include <QLabel>
+
+class PageView;
 
 /**
  * @brief 格式工具栏
@@ -23,7 +26,7 @@ public:
     explicit FormatToolbar(QWidget* parent = nullptr);
 
     /// 关联到目标编辑器，设置信号连接并初始化格式状态
-    void setEditor(QTextEdit* editor);
+    void setEditor(PageView* editor);
 
 private slots:
     void onFontFamilyChanged(const QString& family);     ///< 字体选择变化时应用
@@ -55,5 +58,5 @@ private:
     QAction* alignRightAction_;          ///< 右对齐按钮
     QAction* alignJustifyAction_;        ///< 两端对齐按钮
 
-    QTextEdit* editor_ = nullptr;        ///< 当前关联的编辑器
+    PageView* editor_ = nullptr;          ///< 当前关联的分页编辑器
 };

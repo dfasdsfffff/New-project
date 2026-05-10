@@ -16,7 +16,7 @@
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
-    , editor_(new QTextEdit(this))
+    , editor_(new PageView(this))
     , formatToolbar_(new FormatToolbar(this))
     , controller_(new DocumentController(this))
     , imageStore_(new ImageStore(this))
@@ -73,31 +73,31 @@ void MainWindow::setupMenus()
 
     undoAction_ = editMenu_->addAction("撤销(&U)");
     undoAction_->setShortcut(QKeySequence::Undo);
-    connect(undoAction_, &QAction::triggered, editor_, &QTextEdit::undo);
+    connect(undoAction_, &QAction::triggered, editor_, &PageView::undo);
 
     redoAction_ = editMenu_->addAction("重做(&R)");
     redoAction_->setShortcut(QKeySequence::Redo);
-    connect(redoAction_, &QAction::triggered, editor_, &QTextEdit::redo);
+    connect(redoAction_, &QAction::triggered, editor_, &PageView::redo);
 
     editMenu_->addSeparator();
 
     cutAction_ = editMenu_->addAction("剪切(&T)");
     cutAction_->setShortcut(QKeySequence::Cut);
-    connect(cutAction_, &QAction::triggered, editor_, &QTextEdit::cut);
+    connect(cutAction_, &QAction::triggered, editor_, &PageView::cut);
 
     copyAction_ = editMenu_->addAction("复制(&C)");
     copyAction_->setShortcut(QKeySequence::Copy);
-    connect(copyAction_, &QAction::triggered, editor_, &QTextEdit::copy);
+    connect(copyAction_, &QAction::triggered, editor_, &PageView::copy);
 
     pasteAction_ = editMenu_->addAction("粘贴(&P)");
     pasteAction_->setShortcut(QKeySequence::Paste);
-    connect(pasteAction_, &QAction::triggered, editor_, &QTextEdit::paste);
+    connect(pasteAction_, &QAction::triggered, editor_, &PageView::paste);
 
     editMenu_->addSeparator();
 
     selectAllAction_ = editMenu_->addAction("全选(&A)");
     selectAllAction_->setShortcut(QKeySequence::SelectAll);
-    connect(selectAllAction_, &QAction::triggered, editor_, &QTextEdit::selectAll);
+    connect(selectAllAction_, &QAction::triggered, editor_, &PageView::selectAll);
 
     // 插入菜单
     insertMenu_ = menuBar()->addMenu("插入(&I)");
@@ -107,6 +107,12 @@ void MainWindow::setupMenus()
 
     insertTableAction_ = insertMenu_->addAction("表格(&T)...");
     connect(insertTableAction_, &QAction::triggered, this, &MainWindow::onInsertTable);
+
+    // 格式菜单
+    QMenu* formatMenu = menuBar()->addMenu("格式(&M)");
+
+    pageSetupAction_ = formatMenu->addAction("页面设置(&U)...");
+    connect(pageSetupAction_, &QAction::triggered, this, &MainWindow::onPageSetup);
 }
 
 void MainWindow::setupToolbars()
@@ -132,8 +138,9 @@ void MainWindow::setupEditor()
 {
     setCentralWidget(editor_);
     editor_->setAcceptRichText(true);
-    // 使用等线字体作为默认字体，12 号字适合中文文档编辑
     editor_->document()->setDefaultFont(QFont("等线", 12));
+    // 设置默认 A4 页面尺寸（磅），页面视图自动按页显示
+    editor_->setPageSize(PageSizes::A4());
 }
 
 void MainWindow::connectSignals()
@@ -363,6 +370,32 @@ void MainWindow::onInsertTable()
 
     editor_->setTextCursor(cursor);
     messageLabel_->setText(QString("已插入 %1 x %2 表格").arg(rows).arg(cols));
+}
+
+void MainWindow::onPageSetup()
+{
+    bool ok = false;
+
+    // 预设页面尺寸选项
+    QStringList items;
+    items << "A4 (210 x 297 mm)"
+          << "A3 (297 x 420 mm)"
+          << "A5 (148 x 210 mm)"
+          << "Letter (8.5 x 11 inch)"
+          << "Legal (8.5 x 14 inch)";
+
+    QString choice = QInputDialog::getItem(this, "页面设置", "页面尺寸:",
+                                            items, 0, false, &ok);
+    if (!ok) return;
+
+    QSizeF newSize = PageSizes::A4();
+    if (choice.startsWith("A3"))      newSize = PageSizes::A3();
+    else if (choice.startsWith("A5")) newSize = PageSizes::A5();
+    else if (choice.startsWith("Letter")) newSize = PageSizes::Letter();
+    else if (choice.startsWith("Legal"))  newSize = PageSizes::Legal();
+
+    editor_->setPageSize(newSize);
+    messageLabel_->setText(QString("页面尺寸: %1").arg(choice));
 }
 
 void MainWindow::onEditorModified()

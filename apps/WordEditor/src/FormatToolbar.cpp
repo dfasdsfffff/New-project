@@ -1,6 +1,7 @@
 //! @file FormatToolbar.cpp 格式工具栏实现
 
 #include "FormatToolbar.hpp"
+#include "PageView.hpp"
 
 #include <QFontDatabase>
 #include <QColorDialog>
@@ -145,23 +146,21 @@ void FormatToolbar::setupConnections()
             this, [this]() { onAlignmentChanged(alignJustifyAction_); });
 }
 
-void FormatToolbar::setEditor(QTextEdit* editor)
+void FormatToolbar::setEditor(PageView* editor)
 {
-    // 断开旧编辑器的信号连接
     if (editor_) {
-        disconnect(editor_, &QTextEdit::currentCharFormatChanged,
+        disconnect(editor_, &PageView::currentCharFormatChanged,
                    this, &FormatToolbar::updateStateFromEditor);
-        disconnect(editor_, &QTextEdit::cursorPositionChanged,
+        disconnect(editor_, &PageView::cursorPositionChanged,
                    this, &FormatToolbar::updateStateFromEditor);
     }
 
     editor_ = editor;
 
-    // 监听新编辑器的格式变化和光标位置变化，实时同步工具栏状态
     if (editor_) {
-        connect(editor_, &QTextEdit::currentCharFormatChanged,
+        connect(editor_, &PageView::currentCharFormatChanged,
                 this, &FormatToolbar::updateStateFromEditor);
-        connect(editor_, &QTextEdit::cursorPositionChanged,
+        connect(editor_, &PageView::cursorPositionChanged,
                 this, &FormatToolbar::updateStateFromEditor);
         updateStateFromEditor();
     }
