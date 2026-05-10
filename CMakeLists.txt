@@ -49,6 +49,7 @@ endif()
 
 add_library(CppWordKit
     src/OpenXmlPackage.cpp
+    src/Template.cpp
     src/WordDocument.cpp
     src/XmlPart.cpp
     src/ZipArchive.cpp

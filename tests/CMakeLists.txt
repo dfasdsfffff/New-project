@@ -15,3 +15,4 @@ endfunction()
 
 cppwordkit_add_test(cppwordkit_xml_tests XmlPartTests.cpp)
 cppwordkit_add_test(cppwordkit_word_tests WordDocumentTests.cpp)
+cppwordkit_add_test(cppwordkit_template_tests TemplateTests.cpp)

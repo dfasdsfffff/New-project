@@ -1,10 +1,12 @@
 #pragma once
 
 #include "cppwordkit/Types.hpp"
+#include "cppwordkit/Template.hpp"
 
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -62,6 +64,9 @@ public:
         const Path& imagePath,
         const ImageOptions& options = {}
     );
+    void render(const TemplateContext& context);
+    [[nodiscard]] std::set<std::string> getUndeclaredTemplateVariables(const TemplateContext& context = {}) const;
+    void validateTemplate(const TemplateContext& context = {}) const;
 
     [[nodiscard]] XmlPart& mainDocumentPart();
     [[nodiscard]] const XmlPart& mainDocumentPart() const;
