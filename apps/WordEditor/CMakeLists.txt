@@ -43,10 +43,38 @@ target_link_libraries(${EDITOR_TARGET}
 
 set_target_properties(${EDITOR_TARGET} PROPERTIES
     WIN32_EXECUTABLE TRUE
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/out/$<CONFIG>"
+    DEBUG_POSTFIX "_d"
 )
 
 if(MSVC)
     target_compile_options(${EDITOR_TARGET} PRIVATE /W4)
 else()
     target_compile_options(${EDITOR_TARGET} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+get_filename_component(_qt6_prefix "${Qt6_DIR}/../../.." ABSOLUTE)
+set(_qt6_bin_dir "${_qt6_prefix}/bin")
+find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt6_bin_dir}" REQUIRED)
+
+set(_out_dir "${CMAKE_SOURCE_DIR}/out/$<CONFIG>")
+
+add_custom_command(TARGET ${EDITOR_TARGET} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_out_dir}"
+    COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+        --compiler-runtime
+        "$<TARGET_FILE:${EDITOR_TARGET}>"
+    COMMENT "Deploying Qt dependencies..."
+)
+
+if(CPPWORDKIT_USE_LOCAL_DEPS)
+    add_custom_command(TARGET ${EDITOR_TARGET} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CPPWORDKIT_LOCAL_LIBXML2_ROOT}/bin/libxml2.dll"
+            "${_out_dir}/libxml2.dll"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CPPWORDKIT_LOCAL_ZLIB_ROOT}/bin/libzlib.dll"
+            "${_out_dir}/libzlib.dll"
+        COMMENT "Copying dependency DLLs..."
+    )
 endif()
