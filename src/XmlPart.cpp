@@ -807,6 +807,15 @@ void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, cons
         setWAttribute(colorNode, "val", color);
     }
 
+    if (style.backgroundColorHex) {
+        const auto color = upperAscii(*style.backgroundColorHex);
+        if (!isHexColor(color)) {
+            throw WordProcessingException("Text background color must be a 6-digit RGB hex value");
+        }
+        auto* shading = ensureChild(runProperties, "shd");
+        setWAttribute(shading, "fill", color);
+    }
+
     if (style.fontSizeHalfPoints) {
         auto* size = ensureChild(runProperties, "sz");
         setWAttribute(size, "val", std::to_string(*style.fontSizeHalfPoints));
@@ -821,6 +830,19 @@ void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, cons
     if (style.underline) {
         auto* underline = ensureChild(runProperties, "u");
         setWAttribute(underline, "val", *style.underline ? "single" : "none");
+    }
+    if (style.strike) {
+        setToggleChild(runProperties, "strike", *style.strike);
+    }
+    if (style.superscript || style.subscript) {
+        auto* verticalAlign = ensureChild(runProperties, "vertAlign");
+        if (style.superscript && *style.superscript) {
+            setWAttribute(verticalAlign, "val", "superscript");
+        } else if (style.subscript && *style.subscript) {
+            setWAttribute(verticalAlign, "val", "subscript");
+        } else {
+            setWAttribute(verticalAlign, "val", "baseline");
+        }
     }
 }
 
@@ -859,6 +881,14 @@ TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) co
         }
     }
 
+    auto* shading = firstChildElement(runProperties, "shd");
+    if (shading != nullptr) {
+        const auto value = wAttributeValue(shading, "fill");
+        if (!value.empty() && value != "auto") {
+            style.backgroundColorHex = value;
+        }
+    }
+
     auto* size = firstChildElement(runProperties, "sz");
     if (size != nullptr) {
         style.fontSizeHalfPoints = parseInt(wAttributeValue(size, "val"));
@@ -871,6 +901,15 @@ TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) co
     if (underline != nullptr) {
         const auto value = wAttributeValue(underline, "val");
         style.underline = value != "none" && value != "0" && value != "false";
+    }
+
+    style.strike = boolFromToggleNode(firstChildElement(runProperties, "strike"));
+
+    auto* verticalAlign = firstChildElement(runProperties, "vertAlign");
+    if (verticalAlign != nullptr) {
+        const auto value = wAttributeValue(verticalAlign, "val");
+        style.superscript = value == "superscript";
+        style.subscript = value == "subscript";
     }
 
     return style;
@@ -898,6 +937,16 @@ void XmlPart::setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle
         }
         if (style.lineSpacingRule) {
             setWAttribute(spacing, "lineRule", lineRuleToXml(*style.lineSpacingRule));
+        }
+    }
+
+    if (style.spacingBeforeTwips || style.spacingAfterTwips) {
+        auto* spacing = ensureChild(paragraphProperties, "spacing");
+        if (style.spacingBeforeTwips) {
+            setWAttribute(spacing, "before", std::to_string(*style.spacingBeforeTwips));
+        }
+        if (style.spacingAfterTwips) {
+            setWAttribute(spacing, "after", std::to_string(*style.spacingAfterTwips));
         }
     }
 
@@ -937,6 +986,8 @@ ParagraphStyle XmlPart::paragraphStyle(std::size_t paragraphIndex) const {
     if (spacing != nullptr) {
         style.lineSpacingTwips = parseInt(wAttributeValue(spacing, "line"));
         style.lineSpacingRule = lineRuleFromXml(wAttributeValue(spacing, "lineRule"));
+        style.spacingBeforeTwips = parseInt(wAttributeValue(spacing, "before"));
+        style.spacingAfterTwips = parseInt(wAttributeValue(spacing, "after"));
     }
 
     auto* indent = firstChildElement(paragraphProperties, "ind");

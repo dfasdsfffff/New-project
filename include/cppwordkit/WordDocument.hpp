@@ -38,6 +38,14 @@ public:
 
     [[nodiscard]] std::string text() const;
     [[nodiscard]] std::vector<TextRun> textRuns() const;
+    [[nodiscard]] DocumentModel model() const;
+    void replaceBody(const DocumentModel& model);
+    [[nodiscard]] std::size_t paragraphCount() const;
+    [[nodiscard]] Paragraph paragraph(std::size_t index) const;
+    void setParagraph(std::size_t index, const Paragraph& paragraph);
+    void appendParagraph(const Paragraph& paragraph);
+    void insertParagraph(std::size_t index, const Paragraph& paragraph);
+    void removeParagraph(std::size_t index);
     void setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style);
     [[nodiscard]] TextStyle runStyle(std::size_t paragraphIndex, std::size_t runIndex) const;
     void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);
@@ -63,6 +71,13 @@ public:
     void fillTable(std::size_t tableIndex, const TableData& data);
     void fillFirstTable(const TableData& data);
     std::size_t insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows);
+    [[nodiscard]] ImageId addImage(const Path& imagePath);
+    void insertImage(
+        std::size_t paragraphIndex,
+        std::size_t runIndex,
+        const ImageId& image,
+        const ImageOptions& options = {}
+    );
     bool insertImageAtPlaceholder(
         std::string_view placeholder,
         const Path& imagePath,

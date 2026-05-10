@@ -69,6 +69,30 @@ int main() {
 }
 ```
 
+Editor-oriented document model:
+
+```cpp
+#include <cppwordkit/core/CppWordKitCore.hpp>
+
+int main() {
+    auto doc = cppwordkit::WordDocument::open("input.docx");
+
+    auto model = doc.model();
+    cppwordkit::Paragraph paragraph;
+    paragraph.runs.push_back({.text = "Added from the public model API"});
+    model.paragraphs.push_back(paragraph);
+
+    doc.replaceBody(model);
+    doc.saveAs("output.docx");
+}
+```
+
+The model API is the recommended surface for editors and other applications
+that need structured access to paragraphs, runs, basic styles, simple tables,
+and inline images. The lower-level `XmlPart` XPath APIs remain available for
+advanced OOXML work, but UI applications should avoid depending on raw XPath
+or hand-written WordprocessingML when the model API covers the task.
+
 Template rendering:
 
 ```cpp
@@ -84,3 +108,28 @@ int main() {
     tpl.saveAs("output.docx");
 }
 ```
+
+`CppWordTpl` supports a docxtpl-style template subset implemented in native C++:
+
+- variables with dot paths, such as `{{ user.name }}`
+- filters including `upper`, `lower`, `default`, `escape`, `length`, `join`,
+  `capitalize`, `title`, `trim`, and `replace`
+- control flow with `{% if %}`, `{% elif %}`, `{% else %}`, `{% endif %}`
+- loops with `{% for item in items %}` and `{% endfor %}`, including
+  `loop.index`, `loop.index0`, `loop.first`, and `loop.last`
+- Word structure tags for common templates, especially `{%p ... %}` paragraph
+  blocks and `{%tr ... %}` table row blocks
+
+RichText, InlineImage template values, sub-documents, and media replacement are
+reserved for a later CppWordTpl phase.
+
+## Test notes on Windows
+
+When building with the local MinGW dependency folders, tests need the libxml2,
+zlib, and compiler runtime DLL folders on `PATH`. The CMake test targets add
+those folders automatically when `CPPWORDKIT_USE_LOCAL_DEPS=ON`; if tests are
+run manually, launch them from an environment that includes:
+
+- `D:/libraries/MinGW/libxml2-v2.12.10/bin`
+- `D:/libraries/MinGW/zlib/bin`
+- the active MinGW compiler `bin` directory

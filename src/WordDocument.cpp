@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace cppwordkit {
 namespace {
@@ -20,6 +21,8 @@ constexpr const char* imageRelationshipType = "http://schemas.openxmlformats.org
 std::string xPathIndex(std::size_t index) {
     return std::to_string(index + 1);
 }
+
+std::string makeInlineImageRunXml(std::string_view relationshipId, const ImageOptions& options);
 
 std::string tableXPath(std::size_t tableIndex) {
     return "(//w:tbl)[" + xPathIndex(tableIndex) + "]";
@@ -79,12 +82,228 @@ std::string xmlEscape(std::string_view value) {
     return escaped;
 }
 
+std::string xmlAttributeEscape(std::string_view value) {
+    return xmlEscape(value);
+}
+
+std::string alignmentToXml(ParagraphAlignment alignment) {
+    switch (alignment) {
+    case ParagraphAlignment::Left:
+        return "left";
+    case ParagraphAlignment::Center:
+        return "center";
+    case ParagraphAlignment::Right:
+        return "right";
+    case ParagraphAlignment::Justify:
+        return "both";
+    }
+    return "left";
+}
+
+std::string lineRuleToXml(LineSpacingRule rule) {
+    switch (rule) {
+    case LineSpacingRule::Auto:
+        return "auto";
+    case LineSpacingRule::Exact:
+        return "exact";
+    case LineSpacingRule::AtLeast:
+        return "atLeast";
+    }
+    return "auto";
+}
+
+void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
+    if (!style.fontFamily &&
+        !style.colorHex &&
+        !style.backgroundColorHex &&
+        !style.fontSizeHalfPoints &&
+        !style.bold &&
+        !style.italic &&
+        !style.underline &&
+        !style.strike &&
+        !style.superscript &&
+        !style.subscript) {
+        return;
+    }
+
+    xml << "<w:rPr>";
+    if (style.fontFamily) {
+        const auto font = xmlAttributeEscape(*style.fontFamily);
+        xml << "<w:rFonts w:ascii=\"" << font << "\" w:hAnsi=\"" << font << "\" w:eastAsia=\"" << font << "\"/>";
+    }
+    if (style.colorHex) {
+        xml << "<w:color w:val=\"" << xmlAttributeEscape(*style.colorHex) << "\"/>";
+    }
+    if (style.backgroundColorHex) {
+        xml << "<w:shd w:fill=\"" << xmlAttributeEscape(*style.backgroundColorHex) << "\"/>";
+    }
+    if (style.fontSizeHalfPoints) {
+        xml << "<w:sz w:val=\"" << *style.fontSizeHalfPoints << "\"/>";
+    }
+    if (style.bold) {
+        xml << "<w:b";
+        if (!*style.bold) {
+            xml << " w:val=\"0\"";
+        }
+        xml << "/>";
+    }
+    if (style.italic) {
+        xml << "<w:i";
+        if (!*style.italic) {
+            xml << " w:val=\"0\"";
+        }
+        xml << "/>";
+    }
+    if (style.underline) {
+        xml << "<w:u w:val=\"" << (*style.underline ? "single" : "none") << "\"/>";
+    }
+    if (style.strike) {
+        xml << "<w:strike";
+        if (!*style.strike) {
+            xml << " w:val=\"0\"";
+        }
+        xml << "/>";
+    }
+    if (style.superscript && *style.superscript) {
+        xml << "<w:vertAlign w:val=\"superscript\"/>";
+    } else if (style.subscript && *style.subscript) {
+        xml << "<w:vertAlign w:val=\"subscript\"/>";
+    } else if (style.superscript || style.subscript) {
+        xml << "<w:vertAlign w:val=\"baseline\"/>";
+    }
+    xml << "</w:rPr>";
+}
+
+void appendParagraphProperties(std::ostringstream& xml, const ParagraphStyle& style) {
+    if (!style.alignment &&
+        !style.lineSpacingTwips &&
+        !style.lineSpacingRule &&
+        !style.spacingBeforeTwips &&
+        !style.spacingAfterTwips &&
+        !style.firstLineIndentTwips &&
+        !style.leftIndentTwips &&
+        !style.rightIndentTwips) {
+        return;
+    }
+
+    xml << "<w:pPr>";
+    if (style.alignment) {
+        xml << "<w:jc w:val=\"" << alignmentToXml(*style.alignment) << "\"/>";
+    }
+    if (style.lineSpacingTwips || style.lineSpacingRule || style.spacingBeforeTwips || style.spacingAfterTwips) {
+        xml << "<w:spacing";
+        if (style.lineSpacingTwips) {
+            xml << " w:line=\"" << *style.lineSpacingTwips << "\"";
+        }
+        if (style.lineSpacingRule) {
+            xml << " w:lineRule=\"" << lineRuleToXml(*style.lineSpacingRule) << "\"";
+        }
+        if (style.spacingBeforeTwips) {
+            xml << " w:before=\"" << *style.spacingBeforeTwips << "\"";
+        }
+        if (style.spacingAfterTwips) {
+            xml << " w:after=\"" << *style.spacingAfterTwips << "\"";
+        }
+        xml << "/>";
+    }
+    if (style.firstLineIndentTwips || style.leftIndentTwips || style.rightIndentTwips) {
+        xml << "<w:ind";
+        if (style.firstLineIndentTwips) {
+            xml << " w:firstLine=\"" << *style.firstLineIndentTwips << "\"";
+        }
+        if (style.leftIndentTwips) {
+            xml << " w:left=\"" << *style.leftIndentTwips << "\"";
+        }
+        if (style.rightIndentTwips) {
+            xml << " w:right=\"" << *style.rightIndentTwips << "\"";
+        }
+        xml << "/>";
+    }
+    xml << "</w:pPr>";
+}
+
+std::string runXml(const Run& run) {
+    std::ostringstream xml;
+    if (!run.text.empty() || run.images.empty()) {
+        xml << "<w:r>";
+        appendRunProperties(xml, run.style);
+        xml << "<w:t xml:space=\"preserve\">" << xmlEscape(run.text) << "</w:t>";
+        xml << "</w:r>";
+    }
+    for (const auto& image : run.images) {
+        auto options = image.options;
+        if (!image.description.empty()) {
+            options.description = image.description;
+        }
+        xml << makeInlineImageRunXml(image.image.relationshipId, options);
+    }
+    return xml.str();
+}
+
+std::string paragraphXml(const Paragraph& paragraph) {
+    std::ostringstream xml;
+    xml << "<w:p>";
+    appendParagraphProperties(xml, paragraph.style);
+    if (paragraph.runs.empty()) {
+        xml << "<w:r><w:t></w:t></w:r>";
+    } else {
+        for (const auto& run : paragraph.runs) {
+            xml << runXml(run);
+        }
+    }
+    xml << "</w:p>";
+    return xml.str();
+}
+
+std::string tableXml(const Table& table) {
+    std::ostringstream xml;
+    xml << "<w:tbl>";
+    for (const auto& row : table.rows) {
+        xml << "<w:tr>";
+        for (const auto& cell : row) {
+            xml << "<w:tc><w:p><w:r><w:t xml:space=\"preserve\">"
+                << xmlEscape(cell.text)
+                << "</w:t></w:r></w:p></w:tc>";
+        }
+        xml << "</w:tr>";
+    }
+    xml << "</w:tbl>";
+    return xml.str();
+}
+
+std::string documentXmlFromModel(const DocumentModel& model) {
+    std::ostringstream xml;
+    xml << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+        << "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        << "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+        << "xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" "
+        << "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+        << "xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
+        << "<w:body>";
+    for (const auto& paragraph : model.paragraphs) {
+        xml << paragraphXml(paragraph);
+    }
+    for (const auto& table : model.tables) {
+        xml << tableXml(table);
+    }
+    xml << "<w:sectPr/></w:body></w:document>";
+    return xml.str();
+}
+
 std::string mediaRelationshipTarget(const std::string& mediaPartName) {
     constexpr std::string_view prefix = "word/";
     if (mediaPartName.rfind(prefix, 0) == 0) {
         return mediaPartName.substr(prefix.size());
     }
     return mediaPartName;
+}
+
+std::string mediaPartNameFromRelationshipTarget(std::string target) {
+    constexpr std::string_view prefix = "word/";
+    if (target.rfind(prefix, 0) == 0) {
+        return target;
+    }
+    return "word/" + target;
 }
 
 std::string makeInlineImageRunXml(
@@ -209,6 +428,132 @@ std::vector<TextRun> WordDocument::textRuns() const {
     return runs;
 }
 
+DocumentModel WordDocument::model() const {
+    DocumentModel documentModel;
+    const auto topLevelParagraphCount = paragraphCount();
+    documentModel.paragraphs.reserve(topLevelParagraphCount);
+
+    auto relsPart = const_cast<WordDocument*>(this)->part("word/_rels/document.xml.rels");
+
+    for (std::size_t paragraphIndex = 0; paragraphIndex < topLevelParagraphCount; ++paragraphIndex) {
+        Paragraph paragraph;
+        try {
+            paragraph.style = paragraphStyle(paragraphIndex);
+        } catch (const WordException&) {
+        }
+
+        const auto paragraphPath = "(/w:document/w:body/w:p)[" + xPathIndex(paragraphIndex) + "]";
+        const auto runCount = mainDocumentPart().countByXPath(paragraphPath + "/w:r");
+        paragraph.runs.reserve(runCount);
+        for (std::size_t runIndex = 0; runIndex < runCount; ++runIndex) {
+            Run run;
+            const auto runPath = paragraphPath + "/w:r[" + xPathIndex(runIndex) + "]";
+            const auto textNodes = mainDocumentPart().textsByXPath(runPath + "//w:t");
+            for (const auto& text : textNodes) {
+                run.text += text;
+            }
+            try {
+                run.style = runStyle(paragraphIndex, runIndex);
+            } catch (const WordException&) {
+            }
+
+            const auto relationshipIds = mainDocumentPart().textsByXPath(runPath + "//a:blip/@r:embed");
+            for (const auto& relationshipId : relationshipIds) {
+                InlineImage image;
+                image.image.relationshipId = relationshipId;
+                if (relsPart) {
+                    const auto target = (*relsPart)->textsByXPath(
+                        "//rel:Relationship[@Id='" + relationshipId + "']/@Target"
+                    );
+                    if (!target.empty()) {
+                        image.image.partName = mediaPartNameFromRelationshipTarget(target.front());
+                    }
+                }
+
+                const auto descriptions = mainDocumentPart().textsByXPath(runPath + "//wp:docPr/@descr");
+                if (!descriptions.empty()) {
+                    image.description = descriptions.front();
+                    image.options.description = descriptions.front();
+                }
+
+                const auto widths = mainDocumentPart().textsByXPath(runPath + "//wp:extent/@cx");
+                const auto heights = mainDocumentPart().textsByXPath(runPath + "//wp:extent/@cy");
+                if (!widths.empty()) {
+                    try {
+                        image.options.widthEmu = std::stoll(widths.front());
+                    } catch (const std::exception&) {
+                    }
+                }
+                if (!heights.empty()) {
+                    try {
+                        image.options.heightEmu = std::stoll(heights.front());
+                    } catch (const std::exception&) {
+                    }
+                }
+
+                run.images.push_back(std::move(image));
+            }
+            paragraph.runs.push_back(std::move(run));
+        }
+        documentModel.paragraphs.push_back(std::move(paragraph));
+    }
+
+    const auto tables = tableCount();
+    documentModel.tables.reserve(tables);
+    for (std::size_t tableIndex = 0; tableIndex < tables; ++tableIndex) {
+        documentModel.tables.push_back({table(tableIndex)});
+    }
+    return documentModel;
+}
+
+void WordDocument::replaceBody(const DocumentModel& documentModel) {
+    mainDocumentPart() = XmlPart::fromString(documentXmlFromModel(documentModel));
+}
+
+std::size_t WordDocument::paragraphCount() const {
+    return mainDocumentPart().countByXPath("/w:document/w:body/w:p");
+}
+
+Paragraph WordDocument::paragraph(std::size_t index) const {
+    if (index >= paragraphCount()) {
+        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    }
+    return model().paragraphs[index];
+}
+
+void WordDocument::setParagraph(std::size_t index, const Paragraph& paragraph) {
+    auto documentModel = model();
+    if (index >= documentModel.paragraphs.size()) {
+        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    }
+    documentModel.paragraphs[index] = paragraph;
+    replaceBody(documentModel);
+}
+
+void WordDocument::appendParagraph(const Paragraph& paragraph) {
+    auto documentModel = model();
+    documentModel.paragraphs.push_back(paragraph);
+    replaceBody(documentModel);
+}
+
+void WordDocument::insertParagraph(std::size_t index, const Paragraph& paragraph) {
+    auto documentModel = model();
+    if (index > documentModel.paragraphs.size()) {
+        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    }
+    documentModel.paragraphs.insert(documentModel.paragraphs.begin() + static_cast<std::ptrdiff_t>(index), paragraph);
+    replaceBody(documentModel);
+}
+
+void WordDocument::removeParagraph(std::size_t index) {
+    auto documentModel = model();
+    if (index >= documentModel.paragraphs.size()) {
+        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    }
+    documentModel.paragraphs.erase(documentModel.paragraphs.begin() + static_cast<std::ptrdiff_t>(index));
+    replaceBody(documentModel);
+}
+
 void WordDocument::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
     mainDocumentPart().setRunStyle(paragraphIndex, runIndex, style);
 }
@@ -325,18 +670,54 @@ std::size_t WordDocument::insertTableRowsAtBookmark(std::string_view bookmark, c
     return mainDocumentPart().insertTableRowsAtBookmark(bookmark, rows);
 }
 
+ImageId WordDocument::addImage(const Path& imagePath) {
+    const auto mediaPartName = impl_->package.addImagePart(imagePath);
+    const auto relationshipId = impl_->package.addMainDocumentRelationship(
+        imageRelationshipType,
+        mediaRelationshipTarget(mediaPartName)
+    );
+    return {relationshipId, mediaPartName};
+}
+
+void WordDocument::insertImage(
+    std::size_t paragraphIndex,
+    std::size_t runIndex,
+    const ImageId& image,
+    const ImageOptions& options
+) {
+    if (image.relationshipId.empty()) {
+        throw WordProcessingException("Image relationship id must not be empty");
+    }
+
+    auto documentModel = model();
+    if (paragraphIndex >= documentModel.paragraphs.size()) {
+        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(paragraphIndex));
+    }
+
+    auto& runs = documentModel.paragraphs[paragraphIndex].runs;
+    if (runIndex > runs.size()) {
+        throw WordProcessingException("Run index is out of range: " + std::to_string(runIndex));
+    }
+    if (runIndex == runs.size()) {
+        runs.push_back({});
+    }
+
+    InlineImage inlineImage;
+    inlineImage.image = image;
+    inlineImage.options = options;
+    inlineImage.description = options.description;
+    runs[runIndex].images.push_back(std::move(inlineImage));
+    replaceBody(documentModel);
+}
+
 bool WordDocument::insertImageAtPlaceholder(
     std::string_view placeholder,
     const Path& imagePath,
     const ImageOptions& options
 ) {
     const auto token = normalizePlaceholder(placeholder);
-    const auto mediaPartName = impl_->package.addImagePart(imagePath);
-    const auto relationshipId = impl_->package.addMainDocumentRelationship(
-        imageRelationshipType,
-        mediaRelationshipTarget(mediaPartName)
-    );
-    return mainDocumentPart().replaceWordTextWithXml(token, makeInlineImageRunXml(relationshipId, options));
+    const auto image = addImage(imagePath);
+    return mainDocumentPart().replaceWordTextWithXml(token, makeInlineImageRunXml(image.relationshipId, options));
 }
 
 XmlPart& WordDocument::mainDocumentPart() {

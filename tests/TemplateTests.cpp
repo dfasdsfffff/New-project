@@ -26,12 +26,35 @@ constexpr const char* headerXml = R"(<?xml version="1.0" encoding="UTF-8" standa
 </w:hdr>
 )";
 
+constexpr const char* controlDocumentXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>{%p if show_intro %}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Intro {{ user.name | title }}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>{%p endif %}</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr><w:tc><w:p><w:r><w:t>Name</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Qty</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr><w:tc><w:p><w:r><w:t>{%tr for row in rows %}</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr><w:tc><w:p><w:r><w:t>{{ loop.index }}. {{ row.name | capitalize }}</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>{{ row.qty }}</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr><w:tc><w:p><w:r><w:t>{%tr endfor %}</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+    <w:p><w:r><w:t>{# hidden #}Done {{ words | join(',') | replace('a','A') }}</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+)";
+
 } // namespace
 
 int main() {
     const cppwordkit::TemplateContext context = {
         {"user", cppwordkit::TemplateValue::Object{{"name", "Alice"}}},
-        {"title", "MONTHLY REPORT"}
+        {"title", "MONTHLY REPORT"},
+        {"show_intro", true},
+        {"rows", cppwordkit::TemplateValue::Array{
+            cppwordkit::TemplateValue::Object{{"name", "apple"}, {"qty", std::int64_t{2}}},
+            cppwordkit::TemplateValue::Object{{"name", "banana"}, {"qty", std::int64_t{5}}}
+        }},
+        {"words", cppwordkit::TemplateValue::Array{"alpha", "beta"}}
     };
 
     const auto rendered = cppwordkit::TemplateEngine::renderText(
@@ -45,9 +68,19 @@ int main() {
     const auto resultVariable = cppwordkit::TemplateEngine::renderText("{{ result }}", {{"result", "ok"}});
     assert(resultVariable.text == "ok");
 
+    const auto controlRendered = cppwordkit::TemplateEngine::renderText(
+        "{% if show_intro %}{{ user.name | lower }}{% else %}hidden{% endif %}"
+        "{% for row in rows %}[{{ loop.index0 }}:{{ row.name | capitalize }}]{% endfor %}"
+        "{{ words | join('|') }} {{ ' padded ' | trim }} {{ title | length }}",
+        context
+    );
+    assert(controlRendered.text == "alice[0:Apple][1:Banana]alpha|beta padded 14");
+
     const auto undeclared = cppwordkit::TemplateEngine::undeclaredVariables("{{ user.name }} {{ other }}", context);
     assert(undeclared.size() == 1);
     assert(undeclared.contains("other"));
+
+    assert(cppwordkit::TemplateEngine::diagnostics("{% if show_intro %}ok{% endif %}", context).ok());
 
     bool threwUnsupported = false;
     try {
@@ -81,6 +114,28 @@ int main() {
     compatibilityDocument.render(context);
     assert(compatibilityDocument.text() == "Hello ALICE, friend");
 
+    const auto controlInput = std::filesystem::temp_directory_path() / "cppwordkit_template_control_input.docx";
+    const auto controlOutput = std::filesystem::temp_directory_path() / "cppwordkit_template_control_output.docx";
+    cppwordkit::ZipArchive controlArchive;
+    controlArchive.setText("word/document.xml", controlDocumentXml);
+    controlArchive.write(controlInput);
+
+    auto controlTpl = cppwordkit::DocxTemplate::open(controlInput);
+    assert(controlTpl.getUndeclaredTemplateVariables(context).empty());
+    controlTpl.render(context);
+    controlTpl.saveAs(controlOutput);
+
+    auto controlReopened = cppwordkit::WordDocument::open(controlOutput);
+    const auto controlText = controlReopened.text();
+    assert(controlText.find("Intro Alice") != std::string::npos);
+    assert(controlText.find("1. Apple2") != std::string::npos);
+    assert(controlText.find("2. Banana5") != std::string::npos);
+    assert(controlText.find("Done AlphA,betA") != std::string::npos);
+    assert(controlText.find("{%") == std::string::npos);
+    assert(controlText.find("hidden") == std::string::npos);
+
     std::filesystem::remove(input);
     std::filesystem::remove(output);
+    std::filesystem::remove(controlInput);
+    std::filesystem::remove(controlOutput);
 }

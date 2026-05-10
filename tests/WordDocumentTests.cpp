@@ -218,6 +218,112 @@ int main() {
     assert(styledReopened.mainDocumentPart().hasXPath("(//w:p)[1]/w:pPr/w:jc[@w:val='both']"));
     assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:color[@w:val='336699']"));
 
+    auto structuredDocument = cppwordkit::WordDocument::create();
+    cppwordkit::DocumentModel structuredModel;
+
+    cppwordkit::Paragraph firstParagraph;
+    firstParagraph.style.alignment = cppwordkit::ParagraphAlignment::Center;
+    firstParagraph.style.spacingBeforeTwips = 120;
+    firstParagraph.style.spacingAfterTwips = 240;
+    cppwordkit::Run firstRun;
+    firstRun.text = "Hello ";
+    firstRun.style.bold = true;
+    cppwordkit::Run secondRun;
+    secondRun.text = "model";
+    secondRun.style.italic = true;
+    secondRun.style.backgroundColorHex = "ABCDEF";
+    firstParagraph.runs = {firstRun, secondRun};
+    structuredModel.paragraphs.push_back(firstParagraph);
+
+    cppwordkit::Paragraph secondParagraph;
+    secondParagraph.runs.push_back({.text = "Second paragraph"});
+    structuredModel.paragraphs.push_back(secondParagraph);
+
+    structuredModel.tables.push_back({{{{"A1"}, {"B1"}}, {{"A2"}, {"B2"}}}});
+    structuredDocument.replaceBody(structuredModel);
+    assert(structuredDocument.paragraphCount() == 2);
+    assert(structuredDocument.text() == "Hello modelSecond paragraphA1B1A2B2");
+    const auto readModel = structuredDocument.model();
+    assert(readModel.paragraphs.size() == 2);
+    assert(readModel.paragraphs[0].runs.size() == 2);
+    assert(readModel.paragraphs[0].runs[0].text == "Hello ");
+    assert(readModel.paragraphs[0].runs[0].style.bold == true);
+    assert(readModel.paragraphs[0].runs[1].style.italic == true);
+    assert(readModel.paragraphs[0].runs[1].style.backgroundColorHex == "ABCDEF");
+    assert(readModel.paragraphs[0].style.alignment == cppwordkit::ParagraphAlignment::Center);
+    assert(readModel.paragraphs[0].style.spacingBeforeTwips == 120);
+    assert(readModel.tables.size() == 1);
+    assert(readModel.tables[0].rows[1][1].text == "B2");
+
+    cppwordkit::Paragraph insertedParagraph;
+    insertedParagraph.runs.push_back({.text = "Inserted"});
+    structuredDocument.insertParagraph(1, insertedParagraph);
+    assert(structuredDocument.paragraphCount() == 3);
+    assert(structuredDocument.paragraph(1).runs[0].text == "Inserted");
+    structuredDocument.removeParagraph(1);
+    assert(structuredDocument.paragraphCount() == 2);
+    cppwordkit::Paragraph replacementParagraph;
+    replacementParagraph.runs.push_back({.text = "Replacement"});
+    structuredDocument.setParagraph(1, replacementParagraph);
+    assert(structuredDocument.paragraph(1).runs[0].text == "Replacement");
+    structuredDocument.appendParagraph(insertedParagraph);
+    assert(structuredDocument.paragraphCount() == 3);
+
+    const auto modelOutput = std::filesystem::temp_directory_path() / "cppwordkit_model_output.docx";
+    structuredDocument.saveAs(modelOutput);
+    auto modelReopened = cppwordkit::WordDocument::open(modelOutput);
+    assert(modelReopened.paragraphCount() == 3);
+    assert(modelReopened.model().tables[0].rows[0][0].text == "A1");
+    std::filesystem::remove(modelOutput);
+
+    auto imageApiDocument = cppwordkit::WordDocument::create();
+    cppwordkit::DocumentModel imageModel;
+    imageModel.paragraphs.push_back({{{"Image paragraph"}}});
+    imageApiDocument.replaceBody(imageModel);
+    const auto imageApiPath = std::filesystem::temp_directory_path() / "cppwordkit_model_image.png";
+    const auto imageApiOutput = std::filesystem::temp_directory_path() / "cppwordkit_model_image_output.docx";
+    writeTinyPng(imageApiPath);
+    const auto imageId = imageApiDocument.addImage(imageApiPath);
+    imageApiDocument.insertImage(0, 0, imageId, imageOptions);
+    auto imageApiModel = imageApiDocument.model();
+    const auto imageRun = std::find_if(
+        imageApiModel.paragraphs[0].runs.begin(),
+        imageApiModel.paragraphs[0].runs.end(),
+        [](const cppwordkit::Run& run) { return !run.images.empty(); }
+    );
+    assert(imageRun != imageApiModel.paragraphs[0].runs.end());
+    assert(imageRun->images[0].image.relationshipId == imageId.relationshipId);
+    imageApiDocument.saveAs(imageApiOutput);
+    auto imageApiReopened = cppwordkit::WordDocument::open(imageApiOutput);
+    assert(imageApiReopened.mainDocumentPart().hasXPath("//w:drawing"));
+    const auto reopenedImageModel = imageApiReopened.model();
+    const auto reopenedImageRun = std::find_if(
+        reopenedImageModel.paragraphs[0].runs.begin(),
+        reopenedImageModel.paragraphs[0].runs.end(),
+        [](const cppwordkit::Run& run) { return !run.images.empty(); }
+    );
+    assert(reopenedImageRun != reopenedImageModel.paragraphs[0].runs.end());
+    std::filesystem::remove(imageApiPath);
+    std::filesystem::remove(imageApiOutput);
+
+    const auto unknownInput = std::filesystem::temp_directory_path() / "cppwordkit_unknown_input.docx";
+    const auto unknownOutput = std::filesystem::temp_directory_path() / "cppwordkit_unknown_output.docx";
+    cppwordkit::ZipArchive unknownArchive;
+    unknownArchive.setText("[Content_Types].xml", R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>)");
+    unknownArchive.setText("_rels/.rels", R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>)");
+    unknownArchive.setText("word/document.xml", R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:body></w:document>)");
+    unknownArchive.setText("customXml/item1.xml", R"(<root>keep me</root>)");
+    unknownArchive.write(unknownInput);
+    auto unknownDocument = cppwordkit::WordDocument::open(unknownInput);
+    cppwordkit::DocumentModel unknownModel;
+    unknownModel.paragraphs.push_back({{{"New"}}});
+    unknownDocument.replaceBody(unknownModel);
+    unknownDocument.saveAs(unknownOutput);
+    const auto unknownReopenedParts = cppwordkit::WordDocument::open(unknownOutput).partNames();
+    assert(unknownReopenedParts.end() != std::find(unknownReopenedParts.begin(), unknownReopenedParts.end(), "customXml/item1.xml"));
+    std::filesystem::remove(unknownInput);
+    std::filesystem::remove(unknownOutput);
+
     bool threwOutOfRange = false;
     try {
         styledReopened.setRunStyle(99, 0, runStyle);
