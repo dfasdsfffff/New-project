@@ -425,23 +425,49 @@ void MainWindow::updateTitle()
  * 从控制器模型导入到 QTextDocument
  * 将 cppwordkit::DocumentModel 转换为 QTextDocument 内容供编辑器显示
  */
+/**
+ * 从控制器模型导入到 QTextDocument，包括页面尺寸和边距
+ */
 void MainWindow::doImport()
 {
     if (!controller_->wordDocument()) return;
 
     auto model = controller_->wordDocument()->model();
     mapper_->importModel(*editor_->document(), model, *controller_->wordDocument());
+
+    // 从文档模型恢复页面尺寸（twips → 磅）
+    if (model.pageSetup.pageWidthTwips && model.pageSetup.pageHeightTwips) {
+        QSizeF size(*model.pageSetup.pageWidthTwips / 20.0,
+                    *model.pageSetup.pageHeightTwips / 20.0);
+        editor_->setPageSize(size);
+    }
+    // 恢复页边距
+    if (model.pageSetup.marginLeftTwips || model.pageSetup.marginTopTwips ||
+        model.pageSetup.marginRightTwips || model.pageSetup.marginBottomTwips) {
+        qreal l = model.pageSetup.marginLeftTwips.value_or(1440) / 20.0;
+        qreal t = model.pageSetup.marginTopTwips.value_or(1440) / 20.0;
+        qreal r = model.pageSetup.marginRightTwips.value_or(1440) / 20.0;
+        qreal b = model.pageSetup.marginBottomTwips.value_or(1440) / 20.0;
+        editor_->setDocumentMargins(l, t, r, b);
+    }
+
     editor_->document()->setModified(false);
 }
 
 /**
  * 从 QTextDocument 导出回控制器模型
- * 将编辑器内容同步为 cppwordkit::DocumentModel，再写回 WordDocument
+ * 将编辑器内容和页面尺寸同步为 cppwordkit::DocumentModel，再写回 WordDocument
  */
 void MainWindow::doExport()
 {
     if (!controller_->wordDocument()) return;
 
     auto model = mapper_->exportModel(*editor_->document(), *controller_->wordDocument());
+
+    // 将当前页面尺寸写入文档模型（磅 → twips），保存时持久化到 docx
+    QSizeF size = editor_->pageSize();
+    model.pageSetup.pageWidthTwips = static_cast<std::int32_t>(size.width() * 20.0);
+    model.pageSetup.pageHeightTwips = static_cast<std::int32_t>(size.height() * 20.0);
+
     controller_->wordDocument()->replaceBody(model);
 }

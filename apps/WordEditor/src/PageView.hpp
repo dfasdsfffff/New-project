@@ -112,6 +112,8 @@ protected:
 
 private:
     // ---- 布局计算 ----
+    /// 返回实际缩放比例（zoom_ 为 0 时自动适配视口宽度）
+    qreal effectiveZoom() const;
     /// 重新计算页面布局（页面矩形、滚动范围），在页面尺寸/缩放变化时调用
     void updateLayout();
     /// 获取第 pageIndex 页在视口中的屏幕矩形
@@ -149,7 +151,7 @@ private:
     qreal pageMarginTop_ = 72;     ///< 上边距（磅）
     qreal pageMarginRight_ = 72;   ///< 右边距（磅）
     qreal pageMarginBottom_ = 72;  ///< 下边距（磅）
-    qreal zoom_ = 1.0;     ///< 缩放比例
+    qreal zoom_ = 0.0;     ///< 缩放比例（0.0 = 自适应宽度）
 
     // 布局缓存
     QVector<QRectF> pageRects_;   ///< 每页的屏幕矩形

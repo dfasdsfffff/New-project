@@ -300,7 +300,24 @@ std::string documentXmlFromModel(const DocumentModel& model) {
     for (const auto& table : model.tables) {
         xml << tableXml(table);
     }
-    xml << "<w:sectPr/></w:body></w:document>";
+    // 写入节属性（页面尺寸和边距）
+    xml << "<w:sectPr>";
+    const auto& ps = model.pageSetup;
+    if (ps.pageWidthTwips || ps.pageHeightTwips) {
+        xml << "<w:pgSz";
+        if (ps.pageWidthTwips)  xml << " w:w=\"" << *ps.pageWidthTwips << "\"";
+        if (ps.pageHeightTwips) xml << " w:h=\"" << *ps.pageHeightTwips << "\"";
+        xml << "/>";
+    }
+    if (ps.marginTopTwips || ps.marginBottomTwips || ps.marginLeftTwips || ps.marginRightTwips) {
+        xml << "<w:pgMar";
+        if (ps.marginTopTwips)    xml << " w:top=\"" << *ps.marginTopTwips << "\"";
+        if (ps.marginBottomTwips) xml << " w:bottom=\"" << *ps.marginBottomTwips << "\"";
+        if (ps.marginLeftTwips)   xml << " w:left=\"" << *ps.marginLeftTwips << "\"";
+        if (ps.marginRightTwips)  xml << " w:right=\"" << *ps.marginRightTwips << "\"";
+        xml << "/>";
+    }
+    xml << "</w:sectPr></w:body></w:document>";
     return xml.str();
 }
 
@@ -523,6 +540,41 @@ DocumentModel WordDocument::model() const {
     for (std::size_t tableIndex = 0; tableIndex < tables; ++tableIndex) {
         documentModel.tables.push_back({table(tableIndex)});
     }
+
+    // 读取页面尺寸（w:sectPr/w:pgSz），单位为 twips
+    const auto pgWidths = mainDocumentPart().textsByXPath("//w:sectPr/w:pgSz/@w:w");
+    const auto pgHeights = mainDocumentPart().textsByXPath("//w:sectPr/w:pgSz/@w:h");
+    if (!pgWidths.empty()) {
+        try { documentModel.pageSetup.pageWidthTwips = std::stoi(pgWidths.front()); }
+        catch (const std::exception&) {}
+    }
+    if (!pgHeights.empty()) {
+        try { documentModel.pageSetup.pageHeightTwips = std::stoi(pgHeights.front()); }
+        catch (const std::exception&) {}
+    }
+
+    // 读取页边距（w:sectPr/w:pgMar）
+    const auto margins = mainDocumentPart().textsByXPath("//w:sectPr/w:pgMar/@w:top");
+    if (!margins.empty()) {
+        try { documentModel.pageSetup.marginTopTwips = std::stoi(margins.front()); }
+        catch (const std::exception&) {}
+    }
+    const auto marginBottoms = mainDocumentPart().textsByXPath("//w:sectPr/w:pgMar/@w:bottom");
+    if (!marginBottoms.empty()) {
+        try { documentModel.pageSetup.marginBottomTwips = std::stoi(marginBottoms.front()); }
+        catch (const std::exception&) {}
+    }
+    const auto marginLefts = mainDocumentPart().textsByXPath("//w:sectPr/w:pgMar/@w:left");
+    if (!marginLefts.empty()) {
+        try { documentModel.pageSetup.marginLeftTwips = std::stoi(marginLefts.front()); }
+        catch (const std::exception&) {}
+    }
+    const auto marginRights = mainDocumentPart().textsByXPath("//w:sectPr/w:pgMar/@w:right");
+    if (!marginRights.empty()) {
+        try { documentModel.pageSetup.marginRightTwips = std::stoi(marginRights.front()); }
+        catch (const std::exception&) {}
+    }
+
     return documentModel;
 }
 

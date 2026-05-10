@@ -85,6 +85,17 @@ void PageView::setZoom(qreal zoom)
 
 qreal PageView::zoom() const { return zoom_; }
 
+qreal PageView::effectiveZoom() const
+{
+    if (!qFuzzyIsNull(zoom_)) return zoom_;
+    // 自适应宽度：缩放页面使其适配视口宽度（减去页边留白）
+    qreal viewW = viewport()->width() - pageGap_ * 4;
+    if (viewW <= 0) return 1.0;
+    qreal pagePxW = pageSize_.width() * logicalDpiX() / 72.0;
+    if (pagePxW <= 0) return 1.0;
+    return qMax(0.1, viewW / pagePxW);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // QTextEdit 兼容接口
 // ═══════════════════════════════════════════════════════════════
@@ -269,8 +280,9 @@ void PageView::updateLayout()
     pageRects_.clear();
     if (!doc_) return;
 
-    qreal pageWidthPx = pageSize_.width() * zoom_ * logicalDpiX() / 72.0;
-    qreal pageHeightPx = pageSize_.height() * zoom_ * logicalDpiY() / 72.0;
+    qreal z = effectiveZoom();
+    qreal pageWidthPx = pageSize_.width() * z * logicalDpiX() / 72.0;
+    qreal pageHeightPx = pageSize_.height() * z * logicalDpiY() / 72.0;
 
     int pageCount = doc_->pageCount();
     if (pageCount <= 0) pageCount = 1;
@@ -306,7 +318,7 @@ int PageView::pageAtScreenPos(const QPoint& pos) const
     QPoint adjusted(pos.x() + scrollX, pos.y() + scrollY);
 
     qreal viewW = viewport()->width();
-    qreal centerX = (viewW - (pageSize_.width() * zoom_ * logicalDpiX() / 72.0)) / 2.0;
+    qreal centerX = (viewW - (pageSize_.width() * effectiveZoom() * logicalDpiX() / 72.0)) / 2.0;
     if (centerX < pageGap_) centerX = pageGap_;
 
     for (int i = 0; i < pageRects_.size(); ++i) {
@@ -323,8 +335,9 @@ QPointF PageView::screenToDocument(const QPoint& screenPos) const
     if (page < 0) return {0, static_cast<qreal>(cursorPosition_)};
 
     QRectF pageRect = pageScreenRect(page);
-    qreal scaleX = logicalDpiX() / (72.0 * zoom_);
-    qreal scaleY = logicalDpiY() / (72.0 * zoom_);
+    qreal z = effectiveZoom();
+    qreal scaleX = logicalDpiX() / (72.0 * z);
+    qreal scaleY = logicalDpiY() / (72.0 * z);
 
     qreal docX = (screenPos.x() - pageRect.x()) * scaleX;
     qreal docY = page * pageSize_.height() + (screenPos.y() - pageRect.y()) * scaleY;
@@ -337,8 +350,9 @@ QPointF PageView::documentToScreen(const QPointF& docPos) const
     if (page < 0 || page >= pageRects_.size()) return {0, 0};
 
     QRectF pageRect = pageScreenRect(page);
-    qreal scaleX = zoom_ * logicalDpiX() / 72.0;
-    qreal scaleY = zoom_ * logicalDpiY() / 72.0;
+    qreal z = effectiveZoom();
+    qreal scaleX = z * logicalDpiX() / 72.0;
+    qreal scaleY = z * logicalDpiY() / 72.0;
 
     qreal screenX = pageRect.x() + docPos.x() * scaleX;
     qreal screenY = pageRect.y() + (docPos.y() - page * pageSize_.height()) * scaleY;
@@ -441,7 +455,8 @@ void PageView::paintEvent(QPaintEvent* /*event*/)
 
     // 水平居中偏移
     qreal viewW = viewport()->width();
-    qreal pageW = pageSize_.width() * zoom_ * logicalDpiX() / 72.0;
+    qreal z = effectiveZoom();
+    qreal pageW = pageSize_.width() * z * logicalDpiX() / 72.0;
     qreal centerX = (viewW - pageW) / 2.0;
     if (centerX < pageGap_) centerX = pageGap_;
 
@@ -461,8 +476,8 @@ void PageView::paintEvent(QPaintEvent* /*event*/)
         painter.fillRect(screenRect, Qt::white);
 
         // 页面内容
-        qreal scaleX = zoom_ * logicalDpiX() / 72.0;
-        qreal scaleY = zoom_ * logicalDpiY() / 72.0;
+        qreal scaleX = z * logicalDpiX() / 72.0;
+        qreal scaleY = z * logicalDpiY() / 72.0;
 
         painter.save();
         painter.translate(screenRect.topLeft());

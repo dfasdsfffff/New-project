@@ -139,6 +139,19 @@ struct Table {
     TableData rows;
 };
 
+/// @brief 页面设置（对应 OOXML w:sectPr/w:pgSz 和 w:pgMar）
+///
+/// pageWidth/pageHeight 单位为 twips（1/20 磅）。
+/// A4 = 11906 x 16838 twips（595.28 x 841.89 磅）。
+struct PageSetup {
+    std::optional<std::int32_t> pageWidthTwips;    ///< 页面宽度（twips，对应 w:pgSz/@w:w）
+    std::optional<std::int32_t> pageHeightTwips;   ///< 页面高度（twips，对应 w:pgSz/@w:h）
+    std::optional<std::int32_t> marginTopTwips;    ///< 上边距（twips，对应 w:pgMar/@w:top）
+    std::optional<std::int32_t> marginBottomTwips; ///< 下边距（twips）
+    std::optional<std::int32_t> marginLeftTwips;   ///< 左边距（twips）
+    std::optional<std::int32_t> marginRightTwips;  ///< 右边距（twips）
+};
+
 /// @brief 文档模型 —— 编辑器和模板模块使用的核心数据结构
 ///
 /// 包含段落实体和表格实体。注意：paragraphs 和 tables 是分离存储的，
@@ -146,6 +159,7 @@ struct Table {
 struct DocumentModel {
     std::vector<Paragraph> paragraphs;
     std::vector<Table> tables;
+    PageSetup pageSetup;  ///< 页面尺寸和边距设置
 };
 
 } // namespace cppwordkit
