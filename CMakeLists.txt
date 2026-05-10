@@ -47,19 +47,19 @@ if(CPPWORDKIT_USE_LOCAL_DEPS AND NOT TARGET LibXml2::LibXml2)
     )
 endif()
 
-add_library(CppWordKit
+add_library(CppWordKitCore
     src/OpenXmlPackage.cpp
-    src/Template.cpp
     src/WordDocument.cpp
     src/XmlPart.cpp
     src/ZipArchive.cpp
 )
 
-add_library(CppWordKit::CppWordKit ALIAS CppWordKit)
+add_library(CppWordKit::Core ALIAS CppWordKitCore)
+set_target_properties(CppWordKitCore PROPERTIES EXPORT_NAME Core)
 
-target_compile_features(CppWordKit PUBLIC cxx_std_20)
+target_compile_features(CppWordKitCore PUBLIC cxx_std_20)
 
-target_include_directories(CppWordKit
+target_include_directories(CppWordKitCore
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
@@ -67,21 +67,54 @@ target_include_directories(CppWordKit
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(CppWordKit
+target_link_libraries(CppWordKitCore
     PUBLIC
         LibXml2::LibXml2
         ZLIB::ZLIB
 )
 
+add_library(CppWordTpl
+    src/DocxTemplate.cpp
+    src/Template.cpp
+)
+
+add_library(CppWordKit::Tpl ALIAS CppWordTpl)
+set_target_properties(CppWordTpl PROPERTIES EXPORT_NAME Tpl)
+
+target_compile_features(CppWordTpl PUBLIC cxx_std_20)
+
+target_include_directories(CppWordTpl
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(CppWordTpl
+    PUBLIC
+        CppWordKit::Core
+)
+
+add_library(CppWordKit INTERFACE)
+add_library(CppWordKit::CppWordKit ALIAS CppWordKit)
+set_target_properties(CppWordKit PROPERTIES EXPORT_NAME CppWordKit)
+
+target_link_libraries(CppWordKit
+    INTERFACE
+        CppWordKit::Core
+        CppWordKit::Tpl
+)
+
 if(MSVC)
-    target_compile_options(CppWordKit PRIVATE /W4)
+    target_compile_options(CppWordKitCore PRIVATE /W4)
+    target_compile_options(CppWordTpl PRIVATE /W4)
 else()
-    target_compile_options(CppWordKit PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(CppWordKitCore PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(CppWordTpl PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 include(GNUInstallDirs)
 
-install(TARGETS CppWordKit
+install(TARGETS CppWordKitCore CppWordTpl CppWordKit
     EXPORT CppWordKitTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

@@ -62,4 +62,56 @@ int main() {
     assert(tableRows[0] == "Role");
     assert(tableRows[1] == "AliceEngineer");
     assert(tableRows[2] == "BobWriter");
+
+    auto stylePart = cppwordkit::XmlPart::fromString(
+        R"(<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Styled</w:t></w:r></w:p></w:body></w:document>)"
+    );
+    cppwordkit::TextStyle textStyle;
+    textStyle.fontFamily = "Calibri";
+    textStyle.colorHex = "ff0000";
+    textStyle.fontSizeHalfPoints = 24;
+    textStyle.bold = true;
+    textStyle.italic = false;
+    textStyle.underline = true;
+    stylePart.setRunStyle(0, 0, textStyle);
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:rFonts[@w:ascii='Calibri'][@w:hAnsi='Calibri'][@w:eastAsia='Calibri']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:color[@w:val='FF0000']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:sz[@w:val='24']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:b"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:i[@w:val='0']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:u[@w:val='single']"));
+
+    auto readTextStyle = stylePart.runStyle(0, 0);
+    assert(readTextStyle.fontFamily == "Calibri");
+    assert(readTextStyle.colorHex == "FF0000");
+    assert(readTextStyle.fontSizeHalfPoints == 24);
+    assert(readTextStyle.bold == true);
+    assert(readTextStyle.italic == false);
+    assert(readTextStyle.underline == true);
+
+    cppwordkit::TextStyle colorOnly;
+    colorOnly.colorHex = "00AA11";
+    stylePart.setRunStyle(0, 0, colorOnly);
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:rFonts[@w:ascii='Calibri']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:color[@w:val='00AA11']"));
+
+    cppwordkit::ParagraphStyle paragraphStyle;
+    paragraphStyle.alignment = cppwordkit::ParagraphAlignment::Center;
+    paragraphStyle.lineSpacingTwips = 360;
+    paragraphStyle.lineSpacingRule = cppwordkit::LineSpacingRule::Auto;
+    paragraphStyle.firstLineIndentTwips = 420;
+    paragraphStyle.leftIndentTwips = 120;
+    paragraphStyle.rightIndentTwips = 240;
+    stylePart.setParagraphStyle(0, paragraphStyle);
+    assert(stylePart.hasXPath("(//w:p)[1]/w:pPr/w:jc[@w:val='center']"));
+    assert(stylePart.hasXPath("(//w:p)[1]/w:pPr/w:spacing[@w:line='360'][@w:lineRule='auto']"));
+    assert(stylePart.hasXPath("(//w:p)[1]/w:pPr/w:ind[@w:firstLine='420'][@w:left='120'][@w:right='240']"));
+
+    auto readParagraphStyle = stylePart.paragraphStyle(0);
+    assert(readParagraphStyle.alignment == cppwordkit::ParagraphAlignment::Center);
+    assert(readParagraphStyle.lineSpacingTwips == 360);
+    assert(readParagraphStyle.lineSpacingRule == cppwordkit::LineSpacingRule::Auto);
+    assert(readParagraphStyle.firstLineIndentTwips == 420);
+    assert(readParagraphStyle.leftIndentTwips == 120);
+    assert(readParagraphStyle.rightIndentTwips == 240);
 }

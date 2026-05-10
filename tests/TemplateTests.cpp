@@ -65,16 +65,21 @@ int main() {
     archive.setText("word/header1.xml", headerXml);
     archive.write(input);
 
-    auto document = cppwordkit::WordDocument::open(input);
-    assert(document.getUndeclaredTemplateVariables(context).empty());
-    document.render(context);
-    document.saveAs(output);
+    auto tpl = cppwordkit::DocxTemplate::open(input);
+    assert(tpl.getUndeclaredTemplateVariables(context).empty());
+    tpl.render(context);
+    tpl.saveAs(output);
 
     auto reopened = cppwordkit::WordDocument::open(output);
     assert(reopened.text() == "Hello ALICE, friend");
     auto header = reopened.part("word/header1.xml");
     assert(header.has_value());
     assert((*header)->textsByXPath("//w:t").front() == "monthly report");
+
+    auto compatibilityDocument = cppwordkit::WordDocument::open(input);
+    assert(compatibilityDocument.getUndeclaredTemplateVariables(context).empty());
+    compatibilityDocument.render(context);
+    assert(compatibilityDocument.text() == "Hello ALICE, friend");
 
     std::filesystem::remove(input);
     std::filesystem::remove(output);

@@ -1,14 +1,18 @@
 # CppWordKit
 
-CppWordKit is a lightweight C++20 library for reading and editing `.docx`
-files without Microsoft Office automation.
+CppWordKit is a lightweight C++20 toolkit for `.docx` files without
+Microsoft Office automation.
 
-The first version focuses on:
+The project is split into two layers:
 
-- Opening and saving `.docx` packages.
-- Reading text from `word/document.xml`.
-- Replacing text inside simple `w:t` runs.
-- Filling existing tables row by row.
+- **CppWordKitCore** (`CppWordKit::Core`) handles OOXML/OPC document work:
+  opening and saving `.docx`, editing XML parts, replacing text, inserting
+  table rows, and adding images.
+- **CppWordTpl** (`CppWordKit::Tpl`) builds on Core and provides a docxtpl-style
+  template renderer for existing `.docx` templates and dynamic data.
+
+`CppWordKit::CppWordKit` remains as a compatibility aggregate target that links
+both layers.
 
 ## Dependencies
 
@@ -53,12 +57,30 @@ ctest --test-dir build
 
 ## Example
 
+Core document processing:
+
 ```cpp
-#include <cppwordkit/CppWordKit.hpp>
+#include <cppwordkit/core/CppWordKitCore.hpp>
 
 int main() {
     auto doc = cppwordkit::WordDocument::open("input.docx");
     doc.replaceText("{{name}}", "CppWordKit");
     doc.saveAs("output.docx");
+}
+```
+
+Template rendering:
+
+```cpp
+#include <cppwordkit/tpl/CppWordTpl.hpp>
+
+int main() {
+    cppwordkit::TemplateContext context = {
+        {"user", cppwordkit::TemplateValue::Object{{"name", "Alice"}}}
+    };
+
+    auto tpl = cppwordkit::DocxTemplate::open("template.docx");
+    tpl.render(context);
+    tpl.saveAs("output.docx");
 }
 ```

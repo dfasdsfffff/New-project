@@ -38,6 +38,10 @@ public:
 
     [[nodiscard]] std::string text() const;
     [[nodiscard]] std::vector<TextRun> textRuns() const;
+    void setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style);
+    [[nodiscard]] TextStyle runStyle(std::size_t paragraphIndex, std::size_t runIndex) const;
+    void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);
+    [[nodiscard]] ParagraphStyle paragraphStyle(std::size_t paragraphIndex) const;
 
     bool ReplaceText(const std::string& placeholder, const std::string& value);
     std::size_t ReplaceText(const std::map<std::string, std::string>& replacements);

@@ -3,7 +3,6 @@
 #include "Detail.hpp"
 #include "OpenXmlPackage.hpp"
 #include "cppwordkit/Error.hpp"
-#include "cppwordkit/Template.hpp"
 #include "cppwordkit/XmlPart.hpp"
 
 #include <filesystem>
@@ -133,47 +132,6 @@ std::string makeInlineImageRunXml(
     return xml.str();
 }
 
-bool startsWith(std::string_view value, std::string_view prefix) {
-    return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
-}
-
-bool endsWith(std::string_view value, std::string_view suffix) {
-    return value.size() >= suffix.size() && value.substr(value.size() - suffix.size()) == suffix;
-}
-
-bool isTemplateRenderablePart(std::string_view partName) {
-    return partName == "word/document.xml" ||
-        (startsWith(partName, "word/header") && endsWith(partName, ".xml")) ||
-        (startsWith(partName, "word/footer") && endsWith(partName, ".xml"));
-}
-
-std::string wordText(const XmlPart& part) {
-    const auto texts = part.textsByXPath("//w:t");
-    std::ostringstream output;
-    for (const auto& text : texts) {
-        output << text;
-    }
-    return output.str();
-}
-
-std::vector<std::string> templateExpressions(std::string_view text) {
-    std::vector<std::string> result;
-    std::size_t cursor = 0;
-    while (cursor < text.size()) {
-        const auto open = text.find("{{", cursor);
-        if (open == std::string_view::npos) {
-            break;
-        }
-        const auto close = text.find("}}", open + 2);
-        if (close == std::string_view::npos) {
-            throw WordProcessingException("Unclosed template variable");
-        }
-        result.push_back(std::string(text.substr(open, close - open + 2)));
-        cursor = close + 2;
-    }
-    return result;
-}
-
 } // namespace
 
 struct WordDocument::Impl {
@@ -249,6 +207,22 @@ std::vector<TextRun> WordDocument::textRuns() const {
         }
     }
     return runs;
+}
+
+void WordDocument::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
+    mainDocumentPart().setRunStyle(paragraphIndex, runIndex, style);
+}
+
+TextStyle WordDocument::runStyle(std::size_t paragraphIndex, std::size_t runIndex) const {
+    return mainDocumentPart().runStyle(paragraphIndex, runIndex);
+}
+
+void WordDocument::setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style) {
+    mainDocumentPart().setParagraphStyle(paragraphIndex, style);
+}
+
+ParagraphStyle WordDocument::paragraphStyle(std::size_t paragraphIndex) const {
+    return mainDocumentPart().paragraphStyle(paragraphIndex);
 }
 
 bool WordDocument::ReplaceText(const std::string& placeholder, const std::string& value) {
@@ -363,62 +337,6 @@ bool WordDocument::insertImageAtPlaceholder(
         mediaRelationshipTarget(mediaPartName)
     );
     return mainDocumentPart().replaceWordTextWithXml(token, makeInlineImageRunXml(relationshipId, options));
-}
-
-void WordDocument::render(const TemplateContext& context) {
-    validateTemplate(context);
-
-    for (const auto& partName : partNames()) {
-        if (!isTemplateRenderablePart(partName)) {
-            continue;
-        }
-
-        auto partRef = part(partName);
-        if (!partRef) {
-            continue;
-        }
-
-        const auto text = wordText(**partRef);
-        for (const auto& expression : templateExpressions(text)) {
-            const auto expressionRendered = TemplateEngine::renderText(expression, context);
-            (*partRef)->replaceWordText(expression, expressionRendered.text);
-        }
-    }
-}
-
-std::set<std::string> WordDocument::getUndeclaredTemplateVariables(const TemplateContext& context) const {
-    std::set<std::string> result;
-    for (const auto& partName : partNames()) {
-        if (!isTemplateRenderablePart(partName)) {
-            continue;
-        }
-
-        auto partRef = const_cast<WordDocument*>(this)->part(partName);
-        if (!partRef) {
-            continue;
-        }
-
-        const auto undeclared = TemplateEngine::undeclaredVariables(wordText(**partRef), context);
-        result.insert(undeclared.begin(), undeclared.end());
-    }
-    return result;
-}
-
-void WordDocument::validateTemplate(const TemplateContext& context) const {
-    const auto undeclared = getUndeclaredTemplateVariables(context);
-    if (!undeclared.empty()) {
-        throw WordProcessingException("Template variable is not declared: " + *undeclared.begin());
-    }
-
-    for (const auto& partName : partNames()) {
-        if (!isTemplateRenderablePart(partName)) {
-            continue;
-        }
-        auto partRef = const_cast<WordDocument*>(this)->part(partName);
-        if (partRef) {
-            TemplateEngine::validateText(wordText(**partRef));
-        }
-    }
 }
 
 XmlPart& WordDocument::mainDocumentPart() {

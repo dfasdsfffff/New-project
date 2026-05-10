@@ -9,9 +9,11 @@
 #include <libxml/xpathInternals.h>
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -33,6 +35,219 @@ bool isElementNamed(xmlNodePtr node, const char* localName) {
     return node != nullptr &&
         node->type == XML_ELEMENT_NODE &&
         xmlStrEqual(node->name, reinterpret_cast<const xmlChar*>(localName)) == 1;
+}
+
+bool isHexColor(std::string_view value) {
+    return value.size() == 6 && std::ranges::all_of(value, [](unsigned char ch) {
+        return std::isxdigit(ch) != 0;
+    });
+}
+
+std::string upperAscii(std::string_view value) {
+    std::string result(value.begin(), value.end());
+    std::ranges::transform(result, result.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return result;
+}
+
+std::string wAttributeValue(xmlNodePtr node, const char* localName) {
+    if (node == nullptr) {
+        return {};
+    }
+    return xmlStringToStd(xmlGetNsProp(
+        node,
+        reinterpret_cast<const xmlChar*>(localName),
+        reinterpret_cast<const xmlChar*>("http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+    ));
+}
+
+void setWAttribute(xmlNodePtr node, const char* localName, std::string_view value) {
+    if (node == nullptr) {
+        throw WordProcessingException("Cannot set attribute on null XML node");
+    }
+    auto* ns = xmlSearchNsByHref(
+        node->doc,
+        node,
+        reinterpret_cast<const xmlChar*>("http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+    );
+    if (ns == nullptr) {
+        ns = xmlNewNs(
+            xmlDocGetRootElement(node->doc),
+            reinterpret_cast<const xmlChar*>("http://schemas.openxmlformats.org/wordprocessingml/2006/main"),
+            reinterpret_cast<const xmlChar*>("w")
+        );
+    }
+    xmlSetNsProp(
+        node,
+        ns,
+        reinterpret_cast<const xmlChar*>(localName),
+        reinterpret_cast<const xmlChar*>(std::string(value).c_str())
+    );
+}
+
+xmlNodePtr newWElement(xmlDocPtr doc, const char* localName) {
+    auto* root = xmlDocGetRootElement(doc);
+    auto* ns = xmlSearchNsByHref(
+        doc,
+        root,
+        reinterpret_cast<const xmlChar*>("http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+    );
+    if (ns == nullptr) {
+        ns = xmlNewNs(
+            root,
+            reinterpret_cast<const xmlChar*>("http://schemas.openxmlformats.org/wordprocessingml/2006/main"),
+            reinterpret_cast<const xmlChar*>("w")
+        );
+    }
+
+    auto* node = xmlNewNode(ns, reinterpret_cast<const xmlChar*>(localName));
+    if (node == nullptr) {
+        throw WordProcessingException("Unable to create WordprocessingML node");
+    }
+    return node;
+}
+
+xmlNodePtr firstChildElement(xmlNodePtr parent, const char* localName) {
+    if (parent == nullptr) {
+        return nullptr;
+    }
+    for (auto* child = parent->children; child != nullptr; child = child->next) {
+        if (isElementNamed(child, localName)) {
+            return child;
+        }
+    }
+    return nullptr;
+}
+
+xmlNodePtr ensureFirstChild(xmlNodePtr parent, const char* localName) {
+    auto* existing = firstChildElement(parent, localName);
+    if (existing != nullptr) {
+        return existing;
+    }
+
+    auto* node = newWElement(parent->doc, localName);
+    xmlNodePtr inserted = nullptr;
+    if (parent->children != nullptr) {
+        inserted = xmlAddPrevSibling(parent->children, node);
+    } else {
+        inserted = xmlAddChild(parent, node);
+    }
+    if (inserted == nullptr) {
+        xmlFreeNode(node);
+        throw WordProcessingException("Unable to insert WordprocessingML node");
+    }
+    return inserted;
+}
+
+xmlNodePtr ensureChild(xmlNodePtr parent, const char* localName) {
+    auto* existing = firstChildElement(parent, localName);
+    if (existing != nullptr) {
+        return existing;
+    }
+
+    auto* node = newWElement(parent->doc, localName);
+    if (xmlAddChild(parent, node) == nullptr) {
+        xmlFreeNode(node);
+        throw WordProcessingException("Unable to append WordprocessingML node");
+    }
+    return node;
+}
+
+std::optional<std::int32_t> parseInt(std::string_view value) {
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    try {
+        return std::stoi(std::string(value));
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+std::string alignmentToXml(ParagraphAlignment alignment) {
+    switch (alignment) {
+    case ParagraphAlignment::Left:
+        return "left";
+    case ParagraphAlignment::Center:
+        return "center";
+    case ParagraphAlignment::Right:
+        return "right";
+    case ParagraphAlignment::Justify:
+        return "both";
+    }
+    return "left";
+}
+
+std::optional<ParagraphAlignment> alignmentFromXml(std::string_view value) {
+    if (value == "left") {
+        return ParagraphAlignment::Left;
+    }
+    if (value == "center") {
+        return ParagraphAlignment::Center;
+    }
+    if (value == "right") {
+        return ParagraphAlignment::Right;
+    }
+    if (value == "both" || value == "justify") {
+        return ParagraphAlignment::Justify;
+    }
+    return std::nullopt;
+}
+
+std::string lineRuleToXml(LineSpacingRule rule) {
+    switch (rule) {
+    case LineSpacingRule::Auto:
+        return "auto";
+    case LineSpacingRule::Exact:
+        return "exact";
+    case LineSpacingRule::AtLeast:
+        return "atLeast";
+    }
+    return "auto";
+}
+
+std::optional<LineSpacingRule> lineRuleFromXml(std::string_view value) {
+    if (value == "auto") {
+        return LineSpacingRule::Auto;
+    }
+    if (value == "exact") {
+        return LineSpacingRule::Exact;
+    }
+    if (value == "atLeast") {
+        return LineSpacingRule::AtLeast;
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> boolFromToggleNode(xmlNodePtr node) {
+    if (node == nullptr) {
+        return std::nullopt;
+    }
+    const auto value = wAttributeValue(node, "val");
+    if (value.empty() || value == "true" || value == "1" || value == "on") {
+        return true;
+    }
+    if (value == "false" || value == "0" || value == "off") {
+        return false;
+    }
+    return std::nullopt;
+}
+
+void setToggleChild(xmlNodePtr parent, const char* localName, bool enabled) {
+    auto* child = ensureChild(parent, localName);
+    if (enabled) {
+        return;
+    }
+    setWAttribute(child, "val", "0");
+}
+
+std::string paragraphXPath(std::size_t paragraphIndex) {
+    return "(//w:p)[" + std::to_string(paragraphIndex + 1) + "]";
+}
+
+std::string runXPath(std::size_t paragraphIndex, std::size_t runIndex) {
+    return paragraphXPath(paragraphIndex) + "/w:r[" + std::to_string(runIndex + 1) + "]";
 }
 
 std::string readTextFile(const std::string& path) {
@@ -564,6 +779,174 @@ bool XmlPart::replaceWordTextWithXml(std::string_view search, std::string_view r
     replacementNode.release();
 
     return true;
+}
+
+void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
+    auto* result = impl_->eval(runXPath(paragraphIndex, runIndex));
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("Run index is out of range");
+    }
+
+    auto* run = result->nodesetval->nodeTab[0];
+    auto* runProperties = ensureFirstChild(run, "rPr");
+
+    if (style.fontFamily) {
+        auto* fonts = ensureChild(runProperties, "rFonts");
+        setWAttribute(fonts, "ascii", *style.fontFamily);
+        setWAttribute(fonts, "hAnsi", *style.fontFamily);
+        setWAttribute(fonts, "eastAsia", *style.fontFamily);
+    }
+
+    if (style.colorHex) {
+        const auto color = upperAscii(*style.colorHex);
+        if (!isHexColor(color)) {
+            throw WordProcessingException("Text color must be a 6-digit RGB hex value");
+        }
+        auto* colorNode = ensureChild(runProperties, "color");
+        setWAttribute(colorNode, "val", color);
+    }
+
+    if (style.fontSizeHalfPoints) {
+        auto* size = ensureChild(runProperties, "sz");
+        setWAttribute(size, "val", std::to_string(*style.fontSizeHalfPoints));
+    }
+
+    if (style.bold) {
+        setToggleChild(runProperties, "b", *style.bold);
+    }
+    if (style.italic) {
+        setToggleChild(runProperties, "i", *style.italic);
+    }
+    if (style.underline) {
+        auto* underline = ensureChild(runProperties, "u");
+        setWAttribute(underline, "val", *style.underline ? "single" : "none");
+    }
+}
+
+TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) const {
+    auto* result = impl_->eval(runXPath(paragraphIndex, runIndex));
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("Run index is out of range");
+    }
+
+    TextStyle style;
+    auto* runProperties = firstChildElement(result->nodesetval->nodeTab[0], "rPr");
+    if (runProperties == nullptr) {
+        return style;
+    }
+
+    auto* fonts = firstChildElement(runProperties, "rFonts");
+    if (fonts != nullptr) {
+        auto font = wAttributeValue(fonts, "ascii");
+        if (font.empty()) {
+            font = wAttributeValue(fonts, "hAnsi");
+        }
+        if (font.empty()) {
+            font = wAttributeValue(fonts, "eastAsia");
+        }
+        if (!font.empty()) {
+            style.fontFamily = font;
+        }
+    }
+
+    auto* color = firstChildElement(runProperties, "color");
+    if (color != nullptr) {
+        const auto value = wAttributeValue(color, "val");
+        if (!value.empty()) {
+            style.colorHex = value;
+        }
+    }
+
+    auto* size = firstChildElement(runProperties, "sz");
+    if (size != nullptr) {
+        style.fontSizeHalfPoints = parseInt(wAttributeValue(size, "val"));
+    }
+
+    style.bold = boolFromToggleNode(firstChildElement(runProperties, "b"));
+    style.italic = boolFromToggleNode(firstChildElement(runProperties, "i"));
+
+    auto* underline = firstChildElement(runProperties, "u");
+    if (underline != nullptr) {
+        const auto value = wAttributeValue(underline, "val");
+        style.underline = value != "none" && value != "0" && value != "false";
+    }
+
+    return style;
+}
+
+void XmlPart::setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style) {
+    auto* result = impl_->eval(paragraphXPath(paragraphIndex));
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("Paragraph index is out of range");
+    }
+
+    auto* paragraph = result->nodesetval->nodeTab[0];
+    auto* paragraphProperties = ensureFirstChild(paragraph, "pPr");
+
+    if (style.alignment) {
+        auto* alignment = ensureChild(paragraphProperties, "jc");
+        setWAttribute(alignment, "val", alignmentToXml(*style.alignment));
+    }
+
+    if (style.lineSpacingTwips || style.lineSpacingRule) {
+        auto* spacing = ensureChild(paragraphProperties, "spacing");
+        if (style.lineSpacingTwips) {
+            setWAttribute(spacing, "line", std::to_string(*style.lineSpacingTwips));
+        }
+        if (style.lineSpacingRule) {
+            setWAttribute(spacing, "lineRule", lineRuleToXml(*style.lineSpacingRule));
+        }
+    }
+
+    if (style.firstLineIndentTwips || style.leftIndentTwips || style.rightIndentTwips) {
+        auto* indent = ensureChild(paragraphProperties, "ind");
+        if (style.firstLineIndentTwips) {
+            setWAttribute(indent, "firstLine", std::to_string(*style.firstLineIndentTwips));
+        }
+        if (style.leftIndentTwips) {
+            setWAttribute(indent, "left", std::to_string(*style.leftIndentTwips));
+        }
+        if (style.rightIndentTwips) {
+            setWAttribute(indent, "right", std::to_string(*style.rightIndentTwips));
+        }
+    }
+}
+
+ParagraphStyle XmlPart::paragraphStyle(std::size_t paragraphIndex) const {
+    auto* result = impl_->eval(paragraphXPath(paragraphIndex));
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("Paragraph index is out of range");
+    }
+
+    ParagraphStyle style;
+    auto* paragraphProperties = firstChildElement(result->nodesetval->nodeTab[0], "pPr");
+    if (paragraphProperties == nullptr) {
+        return style;
+    }
+
+    auto* alignment = firstChildElement(paragraphProperties, "jc");
+    if (alignment != nullptr) {
+        style.alignment = alignmentFromXml(wAttributeValue(alignment, "val"));
+    }
+
+    auto* spacing = firstChildElement(paragraphProperties, "spacing");
+    if (spacing != nullptr) {
+        style.lineSpacingTwips = parseInt(wAttributeValue(spacing, "line"));
+        style.lineSpacingRule = lineRuleFromXml(wAttributeValue(spacing, "lineRule"));
+    }
+
+    auto* indent = firstChildElement(paragraphProperties, "ind");
+    if (indent != nullptr) {
+        style.firstLineIndentTwips = parseInt(wAttributeValue(indent, "firstLine"));
+        style.leftIndentTwips = parseInt(wAttributeValue(indent, "left"));
+        style.rightIndentTwips = parseInt(wAttributeValue(indent, "right"));
+    }
+
+    return style;
 }
 
 void XmlPart::setTextByXPath(std::string_view xpath, std::string_view value) {

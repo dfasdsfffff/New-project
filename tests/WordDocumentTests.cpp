@@ -184,4 +184,57 @@ int main() {
     std::filesystem::remove(imageInput);
     std::filesystem::remove(imagePath);
     std::filesystem::remove(imageOutput);
+
+    auto styledDocument = cppwordkit::WordDocument::create();
+    styledDocument.mainDocumentPart().setTextByXPath("//w:t", "Styled");
+
+    cppwordkit::TextStyle runStyle;
+    runStyle.fontFamily = "Arial";
+    runStyle.colorHex = "336699";
+    runStyle.fontSizeHalfPoints = 28;
+    runStyle.bold = true;
+    styledDocument.setRunStyle(0, 0, runStyle);
+
+    cppwordkit::ParagraphStyle paragraphStyle;
+    paragraphStyle.alignment = cppwordkit::ParagraphAlignment::Justify;
+    paragraphStyle.lineSpacingTwips = 480;
+    paragraphStyle.lineSpacingRule = cppwordkit::LineSpacingRule::Exact;
+    paragraphStyle.firstLineIndentTwips = 420;
+    styledDocument.setParagraphStyle(0, paragraphStyle);
+
+    const auto styledOutput = std::filesystem::temp_directory_path() / "cppwordkit_styled_output.docx";
+    styledDocument.saveAs(styledOutput);
+    auto styledReopened = cppwordkit::WordDocument::open(styledOutput);
+    auto reopenedRunStyle = styledReopened.runStyle(0, 0);
+    assert(reopenedRunStyle.fontFamily == "Arial");
+    assert(reopenedRunStyle.colorHex == "336699");
+    assert(reopenedRunStyle.fontSizeHalfPoints == 28);
+    assert(reopenedRunStyle.bold == true);
+    auto reopenedParagraphStyle = styledReopened.paragraphStyle(0);
+    assert(reopenedParagraphStyle.alignment == cppwordkit::ParagraphAlignment::Justify);
+    assert(reopenedParagraphStyle.lineSpacingTwips == 480);
+    assert(reopenedParagraphStyle.lineSpacingRule == cppwordkit::LineSpacingRule::Exact);
+    assert(reopenedParagraphStyle.firstLineIndentTwips == 420);
+    assert(styledReopened.mainDocumentPart().hasXPath("(//w:p)[1]/w:pPr/w:jc[@w:val='both']"));
+    assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:color[@w:val='336699']"));
+
+    bool threwOutOfRange = false;
+    try {
+        styledReopened.setRunStyle(99, 0, runStyle);
+    } catch (const cppwordkit::WordProcessingException&) {
+        threwOutOfRange = true;
+    }
+    assert(threwOutOfRange);
+
+    bool threwInvalidColor = false;
+    try {
+        cppwordkit::TextStyle invalidColor;
+        invalidColor.colorHex = "red";
+        styledReopened.setRunStyle(0, 0, invalidColor);
+    } catch (const cppwordkit::WordProcessingException&) {
+        threwInvalidColor = true;
+    }
+    assert(threwInvalidColor);
+
+    std::filesystem::remove(styledOutput);
 }

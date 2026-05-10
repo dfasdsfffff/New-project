@@ -38,6 +38,10 @@ public:
     bool replaceWordText(std::string_view search, std::string_view replacement, bool matchCase = true);
     std::size_t insertTableRowsAtBookmark(std::string_view bookmark, const TableData& rows);
     bool replaceWordTextWithXml(std::string_view search, std::string_view replacementXml);
+    void setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style);
+    [[nodiscard]] TextStyle runStyle(std::size_t paragraphIndex, std::size_t runIndex) const;
+    void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);
+    [[nodiscard]] ParagraphStyle paragraphStyle(std::size_t paragraphIndex) const;
 
     void setTextByXPath(std::string_view xpath, std::string_view value);
     void appendChildXml(std::string_view parentXPath, std::string_view childXml);
