@@ -139,6 +139,19 @@ struct Table {
     TableData rows;
 };
 
+/// @brief 正文块类型，用于保持 Word 正文中段落和表格的真实顺序
+enum class BodyBlockType {
+    Paragraph,
+    Table
+};
+
+/// @brief 有序正文块，v1 支持顶层段落和顶层表格
+struct BodyBlock {
+    BodyBlockType type = BodyBlockType::Paragraph;
+    Paragraph paragraph;
+    Table table;
+};
+
 /// @brief 页面设置（对应 OOXML w:sectPr/w:pgSz 和 w:pgMar）
 ///
 /// pageWidth/pageHeight 单位为 twips（1/20 磅）。
@@ -157,6 +170,7 @@ struct PageSetup {
 /// 包含段落实体和表格实体。注意：paragraphs 和 tables 是分离存储的，
 /// 顺序信息在读/写往返时可能丢失。（v1 已知限制）
 struct DocumentModel {
+    std::vector<BodyBlock> bodyBlocks; ///< 有序正文块，优先用于保持段落/表格顺序
     std::vector<Paragraph> paragraphs;
     std::vector<Table> tables;
     PageSetup pageSetup;  ///< 页面尺寸和边距设置

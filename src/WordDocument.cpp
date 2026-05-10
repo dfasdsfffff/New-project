@@ -285,6 +285,31 @@ std::string tableXml(const Table& table) {
 }
 
 // 根据 DocumentModel 生成完整的 word/document.xml 字符串
+void appendBodyBlockXml(std::ostringstream& xml, const BodyBlock& block) {
+    switch (block.type) {
+    case BodyBlockType::Paragraph:
+        xml << paragraphXml(block.paragraph);
+        break;
+    case BodyBlockType::Table:
+        xml << tableXml(block.table);
+        break;
+    }
+}
+
+BodyBlock* paragraphBlockAt(DocumentModel& model, std::size_t paragraphIndex) {
+    std::size_t currentParagraph = 0;
+    for (auto& block : model.bodyBlocks) {
+        if (block.type != BodyBlockType::Paragraph) {
+            continue;
+        }
+        if (currentParagraph == paragraphIndex) {
+            return &block;
+        }
+        ++currentParagraph;
+    }
+    return nullptr;
+}
+
 std::string documentXmlFromModel(const DocumentModel& model) {
     std::ostringstream xml;
     xml << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -294,11 +319,17 @@ std::string documentXmlFromModel(const DocumentModel& model) {
         << "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
         << "xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">"
         << "<w:body>";
-    for (const auto& paragraph : model.paragraphs) {
-        xml << paragraphXml(paragraph);
-    }
-    for (const auto& table : model.tables) {
-        xml << tableXml(table);
+    if (!model.bodyBlocks.empty()) {
+        for (const auto& block : model.bodyBlocks) {
+            appendBodyBlockXml(xml, block);
+        }
+    } else {
+        for (const auto& paragraph : model.paragraphs) {
+            xml << paragraphXml(paragraph);
+        }
+        for (const auto& table : model.tables) {
+            xml << tableXml(table);
+        }
     }
     // 写入节属性（页面尺寸和边距）
     xml << "<w:sectPr>";
@@ -542,6 +573,31 @@ DocumentModel WordDocument::model() const {
     }
 
     // 读取页面尺寸（w:sectPr/w:pgSz），单位为 twips
+    const auto orderedBlockCount = mainDocumentPart().countByXPath("/w:document/w:body/*[self::w:p or self::w:tbl]");
+    documentModel.bodyBlocks.reserve(orderedBlockCount);
+    std::size_t paragraphBlockIndex = 0;
+    std::size_t tableBlockIndex = 0;
+    for (std::size_t blockIndex = 0; blockIndex < orderedBlockCount; ++blockIndex) {
+        const auto blockPath = "(/w:document/w:body/*[self::w:p or self::w:tbl])[" + xPathIndex(blockIndex) + "]";
+        if (mainDocumentPart().hasXPath(blockPath + "[self::w:p]")) {
+            if (paragraphBlockIndex < documentModel.paragraphs.size()) {
+                BodyBlock block;
+                block.type = BodyBlockType::Paragraph;
+                block.paragraph = documentModel.paragraphs[paragraphBlockIndex];
+                documentModel.bodyBlocks.push_back(std::move(block));
+            }
+            ++paragraphBlockIndex;
+        } else if (mainDocumentPart().hasXPath(blockPath + "[self::w:tbl]")) {
+            if (tableBlockIndex < documentModel.tables.size()) {
+                BodyBlock block;
+                block.type = BodyBlockType::Table;
+                block.table = documentModel.tables[tableBlockIndex];
+                documentModel.bodyBlocks.push_back(std::move(block));
+            }
+            ++tableBlockIndex;
+        }
+    }
+
     const auto pgWidths = mainDocumentPart().textsByXPath("//w:sectPr/w:pgSz/@w:w");
     const auto pgHeights = mainDocumentPart().textsByXPath("//w:sectPr/w:pgSz/@w:h");
     if (!pgWidths.empty()) {
@@ -600,12 +656,19 @@ void WordDocument::setParagraph(std::size_t index, const Paragraph& paragraph) {
         throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
     }
     documentModel.paragraphs[index] = paragraph;
+    if (auto* block = paragraphBlockAt(documentModel, index)) {
+        block->paragraph = paragraph;
+    }
     replaceBody(documentModel);
 }
 
 void WordDocument::appendParagraph(const Paragraph& paragraph) {
     auto documentModel = model();
     documentModel.paragraphs.push_back(paragraph);
+    BodyBlock block;
+    block.type = BodyBlockType::Paragraph;
+    block.paragraph = paragraph;
+    documentModel.bodyBlocks.push_back(std::move(block));
     replaceBody(documentModel);
 }
 
@@ -615,6 +678,26 @@ void WordDocument::insertParagraph(std::size_t index, const Paragraph& paragraph
         throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
     }
     documentModel.paragraphs.insert(documentModel.paragraphs.begin() + static_cast<std::ptrdiff_t>(index), paragraph);
+    BodyBlock block;
+    block.type = BodyBlockType::Paragraph;
+    block.paragraph = paragraph;
+    if (index == documentModel.paragraphs.size() - 1) {
+        documentModel.bodyBlocks.push_back(std::move(block));
+    } else {
+        std::size_t currentParagraph = 0;
+        auto insertIt = documentModel.bodyBlocks.end();
+        for (auto it = documentModel.bodyBlocks.begin(); it != documentModel.bodyBlocks.end(); ++it) {
+            if (it->type != BodyBlockType::Paragraph) {
+                continue;
+            }
+            if (currentParagraph == index) {
+                insertIt = it;
+                break;
+            }
+            ++currentParagraph;
+        }
+        documentModel.bodyBlocks.insert(insertIt, std::move(block));
+    }
     replaceBody(documentModel);
 }
 
@@ -624,6 +707,17 @@ void WordDocument::removeParagraph(std::size_t index) {
         throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
     }
     documentModel.paragraphs.erase(documentModel.paragraphs.begin() + static_cast<std::ptrdiff_t>(index));
+    std::size_t currentParagraph = 0;
+    for (auto it = documentModel.bodyBlocks.begin(); it != documentModel.bodyBlocks.end(); ++it) {
+        if (it->type != BodyBlockType::Paragraph) {
+            continue;
+        }
+        if (currentParagraph == index) {
+            documentModel.bodyBlocks.erase(it);
+            break;
+        }
+        ++currentParagraph;
+    }
     replaceBody(documentModel);
 }
 
@@ -787,6 +881,9 @@ void WordDocument::insertImage(
     inlineImage.options = options;
     inlineImage.description = options.description;
     runs[runIndex].images.push_back(std::move(inlineImage));
+    if (auto* block = paragraphBlockAt(documentModel, paragraphIndex)) {
+        block->paragraph = documentModel.paragraphs[paragraphIndex];
+    }
     replaceBody(documentModel);
 }
 

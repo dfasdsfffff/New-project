@@ -120,8 +120,7 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
 
     bool first = true;
 
-    // 逐段落导入
-    for (const auto& para : model.paragraphs) {
+    auto importParagraph = [&](const cppwordkit::Paragraph& para) {
         // 除第一个段落外，每个段落前插入换块
         if (!first) {
             cursor.insertBlock();
@@ -164,19 +163,21 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
                 cursor.insertText(QString::fromStdString(run.text), charFmt);
             }
         }
-    }
+    };
 
-    // 导入表格
-    for (const auto& tableModel : model.tables) {
-        if (tableModel.rows.empty()) continue;
+    auto importTable = [&](const cppwordkit::Table& tableModel) {
+        if (tableModel.rows.empty()) return;
 
-        cursor.insertBlock();
+        if (!first) {
+            cursor.insertBlock();
+        }
+        first = false;
         int numRows = static_cast<int>(tableModel.rows.size());
         int numCols = 0;
         for (const auto& row : tableModel.rows) {
             numCols = std::max(numCols, static_cast<int>(row.size()));
         }
-        if (numCols == 0) continue;
+        if (numCols == 0) return;
 
         QTextTableFormat tableFmt;
         tableFmt.setBorder(1);
@@ -200,6 +201,27 @@ void QtDocumentMapper::importModel(QTextDocument& doc, const cppwordkit::Documen
 
         // 将光标移到文档末尾，以便后续内容继续
         cursor.setPosition(doc.rootFrame()->lastPosition());
+    };
+
+    if (!model.bodyBlocks.empty()) {
+        for (const auto& block : model.bodyBlocks) {
+            switch (block.type) {
+            case cppwordkit::BodyBlockType::Paragraph:
+                importParagraph(block.paragraph);
+                break;
+            case cppwordkit::BodyBlockType::Table:
+                importTable(block.table);
+                break;
+            }
+        }
+    } else {
+        // 兼容旧模型：没有有序正文块时仍按原 paragraphs/tables 字段导入。
+        for (const auto& para : model.paragraphs) {
+            importParagraph(para);
+        }
+        for (const auto& tableModel : model.tables) {
+            importTable(tableModel);
+        }
     }
 
     // 将所有图片注册为 QTextDocument 的资源，使 QTextEdit 能正确渲染
@@ -243,7 +265,12 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                     tableData.push_back(std::move(tableRow));
                 }
 
-                model.tables.push_back(cppwordkit::Table{std::move(tableData)});
+                cppwordkit::Table tableModel{std::move(tableData)};
+                cppwordkit::BodyBlock block;
+                block.type = cppwordkit::BodyBlockType::Table;
+                block.table = tableModel;
+                model.bodyBlocks.push_back(block);
+                model.tables.push_back(std::move(tableModel));
             }
         } else if (block.isValid()) {
             // 处理段落：提取段落样式后遍历文本片段
@@ -333,6 +360,10 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                 para.runs.push_back(std::move(emptyRun));
             }
 
+            cppwordkit::BodyBlock block;
+            block.type = cppwordkit::BodyBlockType::Paragraph;
+            block.paragraph = para;
+            model.bodyBlocks.push_back(std::move(block));
             model.paragraphs.push_back(std::move(para));
         }
     }

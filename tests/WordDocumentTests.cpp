@@ -276,6 +276,54 @@ int main() {
     assert(modelReopened.model().tables[0].rows[0][0].text == "A1");
     std::filesystem::remove(modelOutput);
 
+    auto orderedDocument = cppwordkit::WordDocument::create();
+    cppwordkit::DocumentModel orderedModel;
+
+    cppwordkit::BodyBlock orderedP1;
+    orderedP1.type = cppwordkit::BodyBlockType::Paragraph;
+    orderedP1.paragraph.runs.push_back({.text = "P1"});
+    orderedModel.bodyBlocks.push_back(orderedP1);
+    orderedModel.paragraphs.push_back(orderedP1.paragraph);
+
+    cppwordkit::BodyBlock orderedT1;
+    orderedT1.type = cppwordkit::BodyBlockType::Table;
+    orderedT1.table.rows = {{{"T1"}}};
+    orderedModel.bodyBlocks.push_back(orderedT1);
+    orderedModel.tables.push_back(orderedT1.table);
+
+    cppwordkit::BodyBlock orderedP2;
+    orderedP2.type = cppwordkit::BodyBlockType::Paragraph;
+    orderedP2.paragraph.runs.push_back({.text = "P2"});
+    orderedModel.bodyBlocks.push_back(orderedP2);
+    orderedModel.paragraphs.push_back(orderedP2.paragraph);
+
+    cppwordkit::BodyBlock orderedT2;
+    orderedT2.type = cppwordkit::BodyBlockType::Table;
+    orderedT2.table.rows = {{{"T2"}}};
+    orderedModel.bodyBlocks.push_back(orderedT2);
+    orderedModel.tables.push_back(orderedT2.table);
+
+    orderedDocument.replaceBody(orderedModel);
+    assert(orderedDocument.text() == "P1T1P2T2");
+
+    const auto orderedOutput = std::filesystem::temp_directory_path() / "cppwordkit_ordered_body_output.docx";
+    orderedDocument.saveAs(orderedOutput);
+    auto orderedReopened = cppwordkit::WordDocument::open(orderedOutput);
+    const auto orderedReadModel = orderedReopened.model();
+    assert(orderedReopened.text() == "P1T1P2T2");
+    assert(orderedReadModel.bodyBlocks.size() == 4);
+    assert(orderedReadModel.bodyBlocks[0].type == cppwordkit::BodyBlockType::Paragraph);
+    assert(orderedReadModel.bodyBlocks[1].type == cppwordkit::BodyBlockType::Table);
+    assert(orderedReadModel.bodyBlocks[2].type == cppwordkit::BodyBlockType::Paragraph);
+    assert(orderedReadModel.bodyBlocks[3].type == cppwordkit::BodyBlockType::Table);
+    assert(orderedReadModel.paragraphs.size() == 2);
+    assert(orderedReadModel.tables.size() == 2);
+    assert(orderedReadModel.paragraphs[0].runs[0].text == "P1");
+    assert(orderedReadModel.paragraphs[1].runs[0].text == "P2");
+    assert(orderedReadModel.tables[0].rows[0][0].text == "T1");
+    assert(orderedReadModel.tables[1].rows[0][0].text == "T2");
+    std::filesystem::remove(orderedOutput);
+
     auto imageApiDocument = cppwordkit::WordDocument::create();
     cppwordkit::DocumentModel imageModel;
     imageModel.paragraphs.push_back({{{"Image paragraph"}}});
