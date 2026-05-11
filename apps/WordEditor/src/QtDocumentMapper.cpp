@@ -481,10 +481,16 @@ cppwordkit::TextStyle QtDocumentMapper::extractTextStyle(const QTextCharFormat& 
         }
     }
     if (fmt.hasProperty(HighlightColorProperty)) {
-        style.highlightColor = fmt.property(HighlightColorProperty).toString().toStdString();
+        const QString highlight = fmt.property(HighlightColorProperty).toString();
+        if (!highlight.isEmpty() && highlight != "none") {
+            style.highlightColor = highlight.toStdString();
+        }
     }
     if (fmt.hasProperty(BorderColorProperty)) {
-        style.borderColorHex = fmt.property(BorderColorProperty).toString().toStdString();
+        const QString borderColor = fmt.property(BorderColorProperty).toString();
+        if (!borderColor.isEmpty()) {
+            style.borderColorHex = borderColor.toStdString();
+        }
     }
     if (fmt.hasProperty(EnclosedCircleProperty)) {
         style.enclosedCircle = fmt.property(EnclosedCircleProperty).toBool();

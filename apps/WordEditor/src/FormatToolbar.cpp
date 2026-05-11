@@ -1,18 +1,17 @@
-//! @file FormatToolbar.cpp 格式工具栏实现
-
+//! @file FormatToolbar.cpp 格式工具栏实现。
 #include "FormatToolbar.hpp"
 #include "PageView.hpp"
 
-#include <QFontDatabase>
-#include <QColorDialog>
-#include <QTextCharFormat>
-#include <QTextBlockFormat>
-#include <QTextList>
 #include <QActionGroup>
-#include <QToolButton>
-#include <QWidgetAction>
-#include <QHBoxLayout>
+#include <QColorDialog>
+#include <QFontDatabase>
+#include <QLabel>
+#include <QMenu>
 #include <QPen>
+#include <QTextBlockFormat>
+#include <QTextCharFormat>
+#include <QTextList>
+#include <QToolButton>
 
 namespace {
 
@@ -25,6 +24,16 @@ void addHighlightColor(QMenu& menu, const QString& name, const QString& value)
 {
     QAction* action = menu.addAction(name);
     action->setData(value);
+}
+
+QColor highlightColorToQt(const QString& value)
+{
+    if (value == "yellow") return QColor("#ffff00");
+    if (value == "green") return QColor("#00ff00");
+    if (value == "cyan") return QColor("#00ffff");
+    if (value == "red") return QColor("#ff0000");
+    if (value == "blue") return QColor("#0000ff");
+    return {};
 }
 
 } // namespace
@@ -41,29 +50,25 @@ void FormatToolbar::setupUi()
     setMovable(false);
     setIconSize(QSize(16, 16));
 
-    // 字体选择：使用 QFontComboBox，预设简体中文字体
     addWidget(new QLabel("字体 "));
     fontCombo_ = new QFontComboBox(this);
     fontCombo_->setMinimumWidth(160);
     fontCombo_->setWritingSystem(QFontDatabase::SimplifiedChinese);
     addWidget(fontCombo_);
 
-    // 字号选择：可编辑下拉框，预置常用字号，默认 12pt
     addSeparator();
     addWidget(new QLabel("字号 "));
     fontSizeCombo_ = new QComboBox(this);
     fontSizeCombo_->setEditable(true);
     fontSizeCombo_->setMinimumWidth(60);
-    QStringList sizes;
-    sizes << "8" << "9" << "10" << "10.5" << "11" << "12" << "14" << "16"
-          << "18" << "20" << "22" << "24" << "26" << "28" << "36" << "48" << "72";
-    fontSizeCombo_->addItems(sizes);
+    fontSizeCombo_->addItems({
+        "8", "9", "10", "10.5", "11", "12", "14", "16",
+        "18", "20", "22", "24", "26", "28", "36", "48", "72"
+    });
     fontSizeCombo_->setCurrentText("12");
     addWidget(fontSizeCombo_);
 
-    // 样式按钮组：粗体/斜体/下划线/删除线，均为可切换状态
     addSeparator();
-
     boldAction_ = addAction("B");
     boldAction_->setCheckable(true);
     boldAction_->setToolTip("加粗 (Ctrl+B)");
@@ -85,13 +90,14 @@ void FormatToolbar::setupUi()
     ulFont.setUnderline(true);
     underlineAction_->setFont(ulFont);
 
-    strikeAction_ = addAction("~~S~~");
+    strikeAction_ = addAction("S");
     strikeAction_->setCheckable(true);
     strikeAction_->setToolTip("删除线");
+    QFont strikeFont = strikeAction_->font();
+    strikeFont.setStrikeOut(true);
+    strikeAction_->setFont(strikeFont);
 
-    // 颜色按钮组：文字颜色和背景色，点击弹出颜色选择对话框
     addSeparator();
-
     textColorAction_ = addAction("A");
     textColorAction_->setToolTip("文字颜色");
     QFont colorFont = textColorAction_->font();
@@ -118,11 +124,11 @@ void FormatToolbar::setupUi()
         button->setPopupMode(QToolButton::InstantPopup);
     }
 
-    borderAction_ = addAction("□");
+    borderAction_ = addAction("框");
     borderAction_->setCheckable(true);
     borderAction_->setToolTip("字符边框");
 
-    enclosedCircleAction_ = addAction("○");
+    enclosedCircleAction_ = addAction("圈");
     enclosedCircleAction_->setCheckable(true);
     enclosedCircleAction_->setToolTip("带圈字符");
 
@@ -137,29 +143,27 @@ void FormatToolbar::setupUi()
         button->setPopupMode(QToolButton::InstantPopup);
     }
 
-    // 对齐按钮组：使用 QActionGroup 保持互斥选择
     addSeparator();
-
     QActionGroup* alignGroup = new QActionGroup(this);
     alignGroup->setExclusive(true);
 
-    alignLeftAction_ = addAction("≡");
+    alignLeftAction_ = addAction("左");
     alignLeftAction_->setCheckable(true);
     alignLeftAction_->setToolTip("左对齐");
     alignLeftAction_->setChecked(true);
     alignGroup->addAction(alignLeftAction_);
 
-    alignCenterAction_ = addAction("≡");
+    alignCenterAction_ = addAction("中");
     alignCenterAction_->setCheckable(true);
     alignCenterAction_->setToolTip("居中");
     alignGroup->addAction(alignCenterAction_);
 
-    alignRightAction_ = addAction("≡");
+    alignRightAction_ = addAction("右");
     alignRightAction_->setCheckable(true);
     alignRightAction_->setToolTip("右对齐");
     alignGroup->addAction(alignRightAction_);
 
-    alignJustifyAction_ = addAction("≡");
+    alignJustifyAction_ = addAction("齐");
     alignJustifyAction_->setCheckable(true);
     alignJustifyAction_->setToolTip("两端对齐");
     alignGroup->addAction(alignJustifyAction_);
@@ -183,8 +187,15 @@ void FormatToolbar::setupConnections()
             this, &FormatToolbar::onTextColorClicked);
     connect(backgroundColorAction_, &QAction::triggered,
             this, &FormatToolbar::onBackgroundColorClicked);
+    connect(highlightMenu_, &QMenu::triggered,
+            this, &FormatToolbar::onHighlightSelected);
+    connect(borderAction_, &QAction::toggled,
+            this, &FormatToolbar::onBorderToggled);
+    connect(enclosedCircleAction_, &QAction::toggled,
+            this, &FormatToolbar::onEnclosedCircleToggled);
+    connect(changeCaseMenu_, &QMenu::triggered,
+            this, &FormatToolbar::onChangeCaseSelected);
 
-    // 对齐按钮：通过 lambda 中转以复用 onAlignmentChanged 统一处理
     connect(alignLeftAction_, &QAction::triggered,
             this, [this]() { onAlignmentChanged(alignLeftAction_); });
     connect(alignCenterAction_, &QAction::triggered,
@@ -222,7 +233,7 @@ void FormatToolbar::onFontFamilyChanged(const QString& family)
     QTextCharFormat fmt;
     fmt.setFontFamilies({family});
     editor_->mergeCurrentCharFormat(fmt);
-    editor_->setFocus();  // 操作后将焦点还给编辑器，便于继续输入
+    editor_->setFocus();
 }
 
 void FormatToolbar::onFontSizeChanged(const QString& sizeText)
@@ -297,12 +308,73 @@ void FormatToolbar::onBackgroundColorClicked()
 {
     if (!editor_) return;
 
-    QColor color = QColorDialog::getColor(editor_->textBackgroundColor(), this, "选择背景颜色");
+    QColor color = QColorDialog::getColor(editor_->textBackgroundColor(), this, "选择字符底纹");
     if (!color.isValid()) return;
 
     QTextCharFormat fmt;
     fmt.setBackground(color);
+    fmt.setProperty(ShadingColorProperty, color.name().mid(1));
     editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onHighlightSelected(QAction* action)
+{
+    if (!editor_ || !action) return;
+
+    const QString value = action->data().toString();
+    QTextCharFormat fmt;
+    fmt.setProperty(HighlightColorProperty, value);
+    if (value == "none") {
+        fmt.clearBackground();
+    } else {
+        const QColor displayColor = highlightColorToQt(value);
+        if (displayColor.isValid()) {
+            fmt.setBackground(displayColor);
+        }
+    }
+    editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onBorderToggled(bool checked)
+{
+    if (!editor_) return;
+
+    QTextCharFormat fmt;
+    if (checked) {
+        const QColor color = editor_->textColor().isValid() ? editor_->textColor() : Qt::black;
+        fmt.setProperty(BorderColorProperty, color.name().mid(1));
+        fmt.setTextOutline(QPen(color, 0.6));
+    } else {
+        fmt.setProperty(BorderColorProperty, QString());
+        fmt.setTextOutline(QPen(Qt::NoPen));
+    }
+    editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onEnclosedCircleToggled(bool checked)
+{
+    if (!editor_) return;
+
+    QTextCharFormat fmt;
+    fmt.setProperty(EnclosedCircleProperty, checked);
+    editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onChangeCaseSelected(QAction* action)
+{
+    if (!editor_ || !action) return;
+
+    if (action == upperCaseAction_) {
+        editor_->applyTextCase(PageView::TextCaseTransform::Upper);
+    } else if (action == lowerCaseAction_) {
+        editor_->applyTextCase(PageView::TextCaseTransform::Lower);
+    } else if (action == titleCaseAction_) {
+        editor_->applyTextCase(PageView::TextCaseTransform::Title);
+    }
     editor_->setFocus();
 }
 
@@ -327,10 +399,6 @@ void FormatToolbar::onAlignmentChanged(QAction* action)
     editor_->setFocus();
 }
 
-/**
- * 同步工具栏状态到当前编辑器光标处的格式
- * 为避免信号循环导致死循环，在更新 UI 前临时阻断控件信号
- */
 void FormatToolbar::updateStateFromEditor()
 {
     if (!editor_) return;
@@ -353,6 +421,15 @@ void FormatToolbar::updateStateFromEditor()
     strikeAction_->setChecked(fmt.fontStrikeOut());
     strikeAction_->blockSignals(false);
 
+    borderAction_->blockSignals(true);
+    borderAction_->setChecked(fmt.hasProperty(BorderColorProperty) &&
+                              !fmt.property(BorderColorProperty).toString().isEmpty());
+    borderAction_->blockSignals(false);
+
+    enclosedCircleAction_->blockSignals(true);
+    enclosedCircleAction_->setChecked(fmt.property(EnclosedCircleProperty).toBool());
+    enclosedCircleAction_->blockSignals(false);
+
     fontCombo_->blockSignals(true);
     const QStringList families = fmt.property(QTextFormat::FontFamilies).toStringList();
     if (!families.isEmpty()) {
@@ -366,7 +443,6 @@ void FormatToolbar::updateStateFromEditor()
     }
     fontSizeCombo_->blockSignals(false);
 
-    // 同步对齐状态：清除各按钮信号后设置当前对齐方式
     QTextBlockFormat blockFmt = editor_->textCursor().blockFormat();
     alignLeftAction_->blockSignals(true);
     alignCenterAction_->blockSignals(true);

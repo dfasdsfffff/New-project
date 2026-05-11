@@ -70,27 +70,35 @@ int main() {
     textStyle.fontFamily = "Calibri";
     textStyle.colorHex = "ff0000";
     textStyle.backgroundColorHex = "00ff00";
+    textStyle.highlightColor = "yellow";
+    textStyle.borderColorHex = "112233";
     textStyle.fontSizeHalfPoints = 24;
     textStyle.bold = true;
     textStyle.italic = false;
     textStyle.underline = true;
     textStyle.strike = true;
     textStyle.superscript = true;
+    textStyle.enclosedCircle = true;
     stylePart.setRunStyle(0, 0, textStyle);
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:rFonts[@w:ascii='Calibri'][@w:hAnsi='Calibri'][@w:eastAsia='Calibri']"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:color[@w:val='FF0000']"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:shd[@w:fill='00FF00']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:highlight[@w:val='yellow']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:bdr[@w:val='single'][@w:color='112233']"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:sz[@w:val='24']"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:b"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:i[@w:val='0']"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:u[@w:val='single']"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:strike"));
     assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:vertAlign[@w:val='superscript']"));
+    assert(stylePart.hasXPath("(//w:r)[1]/w:rPr/w:em[@w:val='circle']"));
 
     auto readTextStyle = stylePart.runStyle(0, 0);
     assert(readTextStyle.fontFamily == "Calibri");
     assert(readTextStyle.colorHex == "FF0000");
     assert(readTextStyle.backgroundColorHex == "00FF00");
+    assert(readTextStyle.highlightColor == "yellow");
+    assert(readTextStyle.borderColorHex == "112233");
     assert(readTextStyle.fontSizeHalfPoints == 24);
     assert(readTextStyle.bold == true);
     assert(readTextStyle.italic == false);
@@ -98,6 +106,7 @@ int main() {
     assert(readTextStyle.strike == true);
     assert(readTextStyle.superscript == true);
     assert(readTextStyle.subscript == false);
+    assert(readTextStyle.enclosedCircle == true);
 
     cppwordkit::TextStyle colorOnly;
     colorOnly.colorHex = "00AA11";

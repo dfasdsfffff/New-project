@@ -191,8 +191,12 @@ int main() {
     cppwordkit::TextStyle runStyle;
     runStyle.fontFamily = "Arial";
     runStyle.colorHex = "336699";
+    runStyle.backgroundColorHex = "ddeeff";
+    runStyle.highlightColor = "yellow";
+    runStyle.borderColorHex = "112233";
     runStyle.fontSizeHalfPoints = 28;
     runStyle.bold = true;
+    runStyle.enclosedCircle = true;
     styledDocument.setRunStyle(0, 0, runStyle);
 
     cppwordkit::ParagraphStyle paragraphStyle;
@@ -208,8 +212,12 @@ int main() {
     auto reopenedRunStyle = styledReopened.runStyle(0, 0);
     assert(reopenedRunStyle.fontFamily == "Arial");
     assert(reopenedRunStyle.colorHex == "336699");
+    assert(reopenedRunStyle.backgroundColorHex == "DDEEFF");
+    assert(reopenedRunStyle.highlightColor == "yellow");
+    assert(reopenedRunStyle.borderColorHex == "112233");
     assert(reopenedRunStyle.fontSizeHalfPoints == 28);
     assert(reopenedRunStyle.bold == true);
+    assert(reopenedRunStyle.enclosedCircle == true);
     auto reopenedParagraphStyle = styledReopened.paragraphStyle(0);
     assert(reopenedParagraphStyle.alignment == cppwordkit::ParagraphAlignment::Justify);
     assert(reopenedParagraphStyle.lineSpacingTwips == 480);
@@ -217,6 +225,10 @@ int main() {
     assert(reopenedParagraphStyle.firstLineIndentTwips == 420);
     assert(styledReopened.mainDocumentPart().hasXPath("(//w:p)[1]/w:pPr/w:jc[@w:val='both']"));
     assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:color[@w:val='336699']"));
+    assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:shd[@w:fill='DDEEFF']"));
+    assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:highlight[@w:val='yellow']"));
+    assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:bdr[@w:val='single'][@w:color='112233']"));
+    assert(styledReopened.mainDocumentPart().hasXPath("(//w:r)[1]/w:rPr/w:em[@w:val='circle']"));
 
     auto structuredDocument = cppwordkit::WordDocument::create();
     cppwordkit::DocumentModel structuredModel;
@@ -232,6 +244,9 @@ int main() {
     secondRun.text = "model";
     secondRun.style.italic = true;
     secondRun.style.backgroundColorHex = "ABCDEF";
+    secondRun.style.highlightColor = "yellow";
+    secondRun.style.borderColorHex = "112233";
+    secondRun.style.enclosedCircle = true;
     firstParagraph.runs = {firstRun, secondRun};
     structuredModel.paragraphs.push_back(firstParagraph);
 
@@ -250,6 +265,9 @@ int main() {
     assert(readModel.paragraphs[0].runs[0].style.bold == true);
     assert(readModel.paragraphs[0].runs[1].style.italic == true);
     assert(readModel.paragraphs[0].runs[1].style.backgroundColorHex == "ABCDEF");
+    assert(readModel.paragraphs[0].runs[1].style.highlightColor == "yellow");
+    assert(readModel.paragraphs[0].runs[1].style.borderColorHex == "112233");
+    assert(readModel.paragraphs[0].runs[1].style.enclosedCircle == true);
     assert(readModel.paragraphs[0].style.alignment == cppwordkit::ParagraphAlignment::Center);
     assert(readModel.paragraphs[0].style.spacingBeforeTwips == 120);
     assert(readModel.tables.size() == 1);
@@ -274,6 +292,9 @@ int main() {
     auto modelReopened = cppwordkit::WordDocument::open(modelOutput);
     assert(modelReopened.paragraphCount() == 3);
     assert(modelReopened.model().tables[0].rows[0][0].text == "A1");
+    assert(modelReopened.model().paragraphs[0].runs[1].style.highlightColor == "yellow");
+    assert(modelReopened.model().paragraphs[0].runs[1].style.borderColorHex == "112233");
+    assert(modelReopened.model().paragraphs[0].runs[1].style.enclosedCircle == true);
     std::filesystem::remove(modelOutput);
 
     auto orderedDocument = cppwordkit::WordDocument::create();
