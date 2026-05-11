@@ -61,6 +61,7 @@ private slots:
 private:
     void setupMenus();
     void setupRibbon();
+    void applyRibbonStyle();
     void setupStatusBar();
     void setupEditor();
     void connectSignals();

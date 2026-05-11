@@ -155,9 +155,7 @@ void MainWindow::setupMenus()
 
 void MainWindow::setupRibbon()
 {
-    // 功能区样式：三行宽松模式（Office 风格）
-    ribbonBar()->setRibbonStyle(SARibbonBar::RibbonStyleLooseThreeRow);
-    ribbonBar()->setEnableWordWrap(true);
+    applyRibbonStyle();
 
     // ── "开始" 选项卡 ──
     SARibbonCategory* homeCategory = ribbonBar()->addCategoryPage("开始");
@@ -168,14 +166,16 @@ void MainWindow::setupRibbon()
 
     // 字体下拉框
     fontCombo_ = new QFontComboBox(this);
-    fontCombo_->setMinimumWidth(140);
+    fontCombo_->setMinimumWidth(126);
+    fontCombo_->setMaximumHeight(24);
     fontCombo_->setWritingSystem(QFontDatabase::SimplifiedChinese);
-    fontPanel->addLargeWidget(fontCombo_);
+    fontPanel->addMediumWidget(fontCombo_);
 
     // 字号下拉框
     fontSizeCombo_ = new QComboBox(this);
     fontSizeCombo_->setEditable(true);
-    fontSizeCombo_->setMinimumWidth(56);
+    fontSizeCombo_->setMinimumWidth(54);
+    fontSizeCombo_->setMaximumHeight(24);
     QStringList sizes;
     sizes << "8" << "9" << "10" << "10.5" << "11" << "12" << "14" << "16"
           << "18" << "20" << "22" << "24" << "26" << "28" << "36" << "48" << "72";
@@ -328,6 +328,123 @@ void MainWindow::setupRibbon()
     connect(alignCenterAction_, &QAction::triggered, this, [this]() { onAlignmentChanged(alignCenterAction_); });
     connect(alignRightAction_, &QAction::triggered, this, [this]() { onAlignmentChanged(alignRightAction_); });
     connect(alignJustifyAction_, &QAction::triggered, this, [this]() { onAlignmentChanged(alignJustifyAction_); });
+}
+
+void MainWindow::applyRibbonStyle()
+{
+    SARibbonBar* ribbon = ribbonBar();
+    if (!ribbon) return;
+
+    // WPS 风格更重视有效编辑面积：三行紧凑布局、较低标题栏和更密集的面板间距。
+    ribbon->setRibbonStyle(SARibbonBar::RibbonStyleCompactThreeRow);
+    ribbon->setTabBarHeight(28);
+    ribbon->setCategoryHeight(92);
+    ribbon->setPanelTitleHeight(18);
+    ribbon->setPanelSpacing(1);
+    ribbon->setEnableWordWrap(false);
+    ribbon->setEnableIconRightText(false);
+    ribbon->setButtonMaximumAspectRatio(1.18);
+    ribbon->setTabBarBaseLineColor(QColor("#d6dde7"));
+    ribbon->setWindowTitleTextColor(QColor("#1f2937"));
+
+    ribbon->setStyleSheet(QStringLiteral(R"(
+SARibbonBar {
+    background: #f6f8fb;
+    border-bottom: 1px solid #cfd7e3;
+}
+SARibbonTabBar {
+    background: #f6f8fb;
+    border: none;
+}
+SARibbonTabBar::tab {
+    min-width: 58px;
+    min-height: 24px;
+    padding: 2px 14px;
+    margin: 0;
+    color: #1f2937;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background: transparent;
+}
+SARibbonTabBar::tab:hover:!selected {
+    background: #e8f1ff;
+    border-color: #c7daf7;
+}
+SARibbonTabBar::tab:selected {
+    color: #0f5fd0;
+    background: #ffffff;
+    border-color: #cfd7e3;
+    border-top: 2px solid #2f7ee6;
+}
+SARibbonCategory {
+    background: #ffffff;
+}
+SARibbonPanel {
+    background: #ffffff;
+    border-right: 1px solid #e0e5ec;
+    margin: 0;
+}
+SARibbonPanelLabel {
+    color: #667085;
+    font-size: 10px;
+    padding-top: 1px;
+}
+SARibbonToolButton {
+    color: #1f2937;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    padding: 2px 4px;
+}
+SARibbonToolButton:hover {
+    background: #eef6ff;
+    border-color: #b9d7ff;
+}
+SARibbonToolButton:pressed,
+SARibbonToolButton:checked {
+    background: #dbeafe;
+    border-color: #7db5f4;
+}
+SARibbonToolButton:disabled {
+    color: #a0a7b2;
+}
+QComboBox,
+QFontComboBox {
+    min-height: 22px;
+    padding: 1px 22px 1px 6px;
+    color: #1f2937;
+    background: #ffffff;
+    border: 1px solid #cfd7e3;
+    border-radius: 2px;
+}
+QComboBox:hover,
+QFontComboBox:hover {
+    border-color: #88b8f0;
+}
+QComboBox:focus,
+QFontComboBox:focus {
+    border-color: #2f7ee6;
+}
+QComboBox::drop-down,
+QFontComboBox::drop-down {
+    width: 18px;
+    border-left: 1px solid #e0e5ec;
+}
+QMenu {
+    color: #1f2937;
+    background: #ffffff;
+    border: 1px solid #cfd7e3;
+    padding: 4px;
+}
+QMenu::item {
+    min-height: 22px;
+    padding: 3px 28px 3px 24px;
+}
+QMenu::item:selected {
+    background: #e8f1ff;
+    color: #0f5fd0;
+}
+)"));
 }
 
 // ═══════════════════════════════════════════════════════════════
