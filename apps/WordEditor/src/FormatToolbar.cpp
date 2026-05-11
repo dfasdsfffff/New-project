@@ -19,12 +19,33 @@ namespace {
 constexpr int HighlightColorProperty = QTextFormat::UserProperty + 101;
 constexpr int BorderColorProperty = QTextFormat::UserProperty + 102;
 constexpr int EnclosedCircleProperty = QTextFormat::UserProperty + 103;
-constexpr int ShadingColorProperty = QTextFormat::UserProperty + 104;
+constexpr int ShadingColorProperty [[maybe_unused]] = QTextFormat::UserProperty + 104;
 
 void addHighlightColor(QMenu& menu, const QString& name, const QString& value)
 {
     QAction* action = menu.addAction(name);
     action->setData(value);
+}
+
+QColor highlightColorToQt(const QString& value)
+{
+    if (value == "yellow") return QColor("#ffff00");
+    if (value == "green") return QColor("#00ff00");
+    if (value == "cyan") return QColor("#00ffff");
+    if (value == "magenta") return QColor("#ff00ff");
+    if (value == "blue") return QColor("#0000ff");
+    if (value == "red") return QColor("#ff0000");
+    if (value == "darkYellow") return QColor("#808000");
+    if (value == "darkGreen") return QColor("#008000");
+    if (value == "darkCyan") return QColor("#008080");
+    if (value == "darkMagenta") return QColor("#800080");
+    if (value == "darkBlue") return QColor("#000080");
+    if (value == "darkRed") return QColor("#800000");
+    if (value == "darkGray") return QColor("#808080");
+    if (value == "lightGray") return QColor("#c0c0c0");
+    if (value == "black") return QColor("#000000");
+    if (value == "white") return QColor("#ffffff");
+    return {};
 }
 
 } // namespace
@@ -184,6 +205,22 @@ void FormatToolbar::setupConnections()
     connect(backgroundColorAction_, &QAction::triggered,
             this, &FormatToolbar::onBackgroundColorClicked);
 
+    // 高亮、字符边框和带圈字符
+    connect(highlightMenu_, &QMenu::triggered,
+            this, &FormatToolbar::onHighlightSelected);
+    connect(borderAction_, &QAction::toggled,
+            this, &FormatToolbar::onBorderToggled);
+    connect(enclosedCircleAction_, &QAction::toggled,
+            this, &FormatToolbar::onEnclosedCircleToggled);
+
+    // 大小写转换
+    connect(upperCaseAction_, &QAction::triggered,
+            this, [this]() { onChangeCaseSelected(upperCaseAction_); });
+    connect(lowerCaseAction_, &QAction::triggered,
+            this, [this]() { onChangeCaseSelected(lowerCaseAction_); });
+    connect(titleCaseAction_, &QAction::triggered,
+            this, [this]() { onChangeCaseSelected(titleCaseAction_); });
+
     // 对齐按钮：通过 lambda 中转以复用 onAlignmentChanged 统一处理
     connect(alignLeftAction_, &QAction::triggered,
             this, [this]() { onAlignmentChanged(alignLeftAction_); });
@@ -306,6 +343,64 @@ void FormatToolbar::onBackgroundColorClicked()
     editor_->setFocus();
 }
 
+void FormatToolbar::onHighlightSelected(QAction* action)
+{
+    if (!editor_) return;
+
+    const QString value = action->data().toString();
+
+    QTextCharFormat fmt;
+    fmt.setProperty(HighlightColorProperty, value);
+    if (value == "none") {
+        fmt.clearProperty(HighlightColorProperty);
+    } else {
+        const QColor displayColor = highlightColorToQt(value);
+        if (displayColor.isValid()) {
+            fmt.setBackground(displayColor);
+        }
+    }
+    editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onBorderToggled(bool checked)
+{
+    if (!editor_) return;
+
+    QTextCharFormat fmt;
+    if (checked) {
+        fmt.setProperty(BorderColorProperty, QStringLiteral("000000"));
+    } else {
+        fmt.setProperty(BorderColorProperty, QString());
+    }
+    editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onEnclosedCircleToggled(bool checked)
+{
+    if (!editor_) return;
+
+    QTextCharFormat fmt;
+    fmt.setProperty(EnclosedCircleProperty, checked);
+    editor_->mergeCurrentCharFormat(fmt);
+    editor_->setFocus();
+}
+
+void FormatToolbar::onChangeCaseSelected(QAction* action)
+{
+    if (!editor_) return;
+
+    if (action == upperCaseAction_) {
+        editor_->applyTextCase(PageView::TextCaseTransform::Upper);
+    } else if (action == lowerCaseAction_) {
+        editor_->applyTextCase(PageView::TextCaseTransform::Lower);
+    } else if (action == titleCaseAction_) {
+        editor_->applyTextCase(PageView::TextCaseTransform::Title);
+    }
+    editor_->setFocus();
+}
+
 void FormatToolbar::onAlignmentChanged(QAction* action)
 {
     if (!editor_) return;
@@ -365,6 +460,16 @@ void FormatToolbar::updateStateFromEditor()
         fontSizeCombo_->setCurrentText(QString::number(fmt.fontPointSize()));
     }
     fontSizeCombo_->blockSignals(false);
+
+    // 同步字符边框和带圈字符状态
+    borderAction_->blockSignals(true);
+    const QVariant borderProp = fmt.property(BorderColorProperty);
+    borderAction_->setChecked(borderProp.isValid() && !borderProp.toString().isEmpty());
+    borderAction_->blockSignals(false);
+
+    enclosedCircleAction_->blockSignals(true);
+    enclosedCircleAction_->setChecked(fmt.property(EnclosedCircleProperty).toBool());
+    enclosedCircleAction_->blockSignals(false);
 
     // 同步对齐状态：清除各按钮信号后设置当前对齐方式
     QTextBlockFormat blockFmt = editor_->textCursor().blockFormat();

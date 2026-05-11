@@ -98,7 +98,6 @@ QTextCharFormat QtDocumentMapper::mapTextStyle(const cppwordkit::TextStyle& styl
     if (style.borderColorHex) {
         const auto borderColor = QColor(QString::fromStdString("#" + *style.borderColorHex));
         fmt.setProperty(BorderColorProperty, borderColor.name().mid(1));
-        fmt.setTextOutline(QPen(borderColor, 0.6));
     }
     if (style.enclosedCircle) {
         fmt.setProperty(EnclosedCircleProperty, *style.enclosedCircle);
@@ -484,7 +483,10 @@ cppwordkit::TextStyle QtDocumentMapper::extractTextStyle(const QTextCharFormat& 
         style.highlightColor = fmt.property(HighlightColorProperty).toString().toStdString();
     }
     if (fmt.hasProperty(BorderColorProperty)) {
-        style.borderColorHex = fmt.property(BorderColorProperty).toString().toStdString();
+        const QString borderColor = fmt.property(BorderColorProperty).toString();
+        if (!borderColor.isEmpty()) {
+            style.borderColorHex = borderColor.toStdString();
+        }
     }
     if (fmt.hasProperty(EnclosedCircleProperty)) {
         style.enclosedCircle = fmt.property(EnclosedCircleProperty).toBool();

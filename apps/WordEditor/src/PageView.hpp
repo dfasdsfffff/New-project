@@ -143,6 +143,8 @@ private:
     QRectF cursorScreenRect() const;
     /// 绘制文本光标
     void drawCursor(QPainter& painter);
+    /// 在每行有边框属性的文本周围绘制整体矩形边框
+    void drawCharBorders(QPainter& painter);
     /// 启动/停止光标闪烁定时器
     void startBlinking();
     void stopBlinking();
