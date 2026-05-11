@@ -1,0 +1,9 @@
+{
+  "name": "cppwordkit",
+  "version-string": "0.1.0",
+  "description": "A lightweight C++20 library for reading and editing docx files",
+  "dependencies": [
+    "zlib",
+    "libxml2"
+  ]
+}

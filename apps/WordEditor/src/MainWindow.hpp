@@ -2,88 +2,123 @@
 
 #pragma once
 
-#include <QMainWindow>
-#include <QLabel>
-#include <QMenuBar>
-#include <QStatusBar>
+#include <SARibbon.h>
 
-#include "DocumentController.hpp"
-#include "QtDocumentMapper.hpp"
-#include "ImageStore.hpp"
-#include "FormatToolbar.hpp"
-#include "PageView.hpp"
+#include <QLabel>
+#include <QFontComboBox>
+#include <QComboBox>
+#include <QAction>
+#include <QMenu>
+
+class PageView;
+class DocumentController;
+class QtDocumentMapper;
+class ImageStore;
 
 /**
  * @brief 应用程序主窗口
  *
- * 负责组织文档编辑器的整体布局，包括富文本编辑器、格式工具栏、菜单栏和状态栏。
- * 作为 MVC 架构中的视图层，通过 DocumentController 访问底层文档模型，
- * 通过 QtDocumentMapper 在 QTextDocument 与 cppwordkit::DocumentModel 之间双向转换。
+ * 基于 SARibbonMainWindow，使用 SARibbon 功能区控件。
+ * 负责组织文档编辑器的整体布局，包括功能区、编辑器和状态栏。
  */
-class MainWindow : public QMainWindow {
+class MainWindow : public SARibbonMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
 
 private slots:
-    // 文件菜单槽函数：处理新建、打开、保存、另存为、导出 PDF
+    // 文件菜单
     void onNewDocument();
     void onOpenDocument();
     void onSaveDocument();
     void onSaveDocumentAs();
     void onExportPdf();
-    // 插入菜单槽函数：处理插入图片和表格
+    // 插入菜单
     void onInsertImage();
     void onInsertTable();
-    /// 响应编辑器内容修改状态变化
-    void onEditorModified();
-    /// 同步控制器状态到界面
-    void updateStatusFromController();
-    /// 页面设置对话框
+    // 页面设置
     void onPageSetup();
+    // 格式操作
+    void onFontFamilyChanged(const QString& family);
+    void onFontSizeChanged(const QString& sizeText);
+    void onBoldToggled(bool checked);
+    void onItalicToggled(bool checked);
+    void onUnderlineToggled(bool checked);
+    void onStrikeToggled(bool checked);
+    void onTextColorClicked();
+    void onBackgroundColorClicked();
+    void onHighlightSelected(QAction* action);
+    void onBorderToggled(bool checked);
+    void onEnclosedCircleToggled(bool checked);
+    void onChangeCaseSelected(QAction* action);
+    void onAlignmentChanged(QAction* action);
+    // 同步
+    void onEditorModified();
+    void updateStatusFromController();
+    void updateZoomLabel();
+    void updateRibbonState();
 
 private:
-    void setupMenus();      // 构建菜单栏，包括文件、编辑、插入菜单
-    void setupToolbars();   // 将格式工具栏添加到主窗口
-    void setupStatusBar();  // 初始化状态栏：文件路径、修改状态、消息提示
-    void setupEditor();     // 将 PageView 设为中心控件并配置默认字体和页面尺寸
-    void connectSignals();  // 连接控制器信号到界面更新槽函数
-    void updateTitle();     // 根据文件名和修改状态刷新窗口标题
+    void setupMenus();
+    void setupRibbon();
+    void setupStatusBar();
+    void setupEditor();
+    void connectSignals();
+    void updateTitle();
+    void doImport();
+    void doExport();
 
-    void updateZoomLabel(); // 更新状态栏中的页面缩放比例
-    void doImport();  // 从控制器模型导入到 QTextDocument
-    void doExport();  // 从 QTextDocument 导出回控制器模型
+    // ── 编辑器 ──
+    PageView* editor_;
+    DocumentController* controller_;
+    ImageStore* imageStore_;
+    QtDocumentMapper* mapper_;
 
-    PageView* editor_;                   ///< 分页文档编辑器核心控件（替换 QTextEdit）
-    FormatToolbar* formatToolbar_;       ///< 格式工具栏（字体、字号、样式、对齐）
-    DocumentController* controller_;     ///< 文档控制器，管理底层 WordDocument 生命周期
-    ImageStore* imageStore_;             ///< 图片资源管理器，暂存文档中的图片数据
-    QtDocumentMapper* mapper_;           ///< 模型映射器，桥接 QTextDocument 和 cppwordkit 模型
+    // ── 状态栏 ──
+    QLabel* filePathLabel_;
+    QLabel* modifiedLabel_;
+    QLabel* messageLabel_;
+    QLabel* zoomLabel_;
 
-    QLabel* filePathLabel_;     ///< 状态栏：当前文件路径
-    QLabel* modifiedLabel_;     ///< 状态栏：文档修改状态指示
-    QLabel* messageLabel_;      ///< 状态栏：操作提示消息
-    QLabel* zoomLabel_;         ///< 状态栏：页面缩放比例
-
+    // ── 菜单 ──
     QMenu* fileMenu_;
     QMenu* editMenu_;
     QMenu* insertMenu_;
-
     QAction* newAction_;
     QAction* openAction_;
     QAction* saveAction_;
     QAction* saveAsAction_;
     QAction* exportPdfAction_;
     QAction* exitAction_;
-
     QAction* undoAction_;
     QAction* redoAction_;
     QAction* cutAction_;
     QAction* copyAction_;
     QAction* pasteAction_;
     QAction* selectAllAction_;
-
     QAction* insertImageAction_;
     QAction* insertTableAction_;
     QAction* pageSetupAction_;
+
+    // ── 功能区控件 ──
+    QFontComboBox* fontCombo_;
+    QComboBox* fontSizeCombo_;
+    QAction* boldAction_;
+    QAction* italicAction_;
+    QAction* underlineAction_;
+    QAction* strikeAction_;
+    QAction* textColorAction_;
+    QAction* backgroundColorAction_;
+    QAction* highlightAction_;
+    QAction* borderAction_;
+    QAction* enclosedCircleAction_;
+    QAction* upperCaseAction_;
+    QAction* lowerCaseAction_;
+    QAction* titleCaseAction_;
+    QMenu* highlightMenu_;
+    QMenu* changeCaseMenu_;
+    QAction* alignLeftAction_;
+    QAction* alignCenterAction_;
+    QAction* alignRightAction_;
+    QAction* alignJustifyAction_;
 };

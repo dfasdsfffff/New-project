@@ -6,13 +6,20 @@ set(CMAKE_AUTOUIC ON)
 
 set(EDITOR_TARGET CppWordKitWordEditor)
 
+# ── SARibbon 库（合辑版） ──
+add_library(SARibbon STATIC
+    ${CPPWORDKIT_3THLIB_DIR}/SARibbon/SARibbon.cpp
+)
+target_compile_features(SARibbon PRIVATE cxx_std_17)
+target_include_directories(SARibbon PUBLIC ${CPPWORDKIT_3THLIB_DIR}/SARibbon)
+target_link_libraries(SARibbon PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets)
+
 set(EDITOR_SOURCES
     src/main.cpp
     src/MainWindow.cpp
     src/DocumentController.cpp
     src/QtDocumentMapper.cpp
     src/ImageStore.cpp
-    src/FormatToolbar.cpp
     src/PageView.cpp
     src/PageSetupDialog.cpp
 )
@@ -22,7 +29,6 @@ set(EDITOR_HEADERS
     src/DocumentController.hpp
     src/QtDocumentMapper.hpp
     src/ImageStore.hpp
-    src/FormatToolbar.hpp
     src/PageView.hpp
     src/PageSetupDialog.hpp
 )
@@ -34,11 +40,13 @@ target_compile_features(${EDITOR_TARGET} PRIVATE cxx_std_20)
 target_include_directories(${EDITOR_TARGET}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CPPWORDKIT_3THLIB_DIR}/SARibbon
 )
 
 target_link_libraries(${EDITOR_TARGET}
     PRIVATE
         CppWordKit::CppWordKit
+        SARibbon
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets

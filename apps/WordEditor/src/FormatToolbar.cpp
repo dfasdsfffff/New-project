@@ -1,16 +1,16 @@
-//! @file FormatToolbar.cpp 格式工具栏实现
+//! @file FormatToolbar.cpp 功能区格式工具栏实现
 
 #include "FormatToolbar.hpp"
+#include "RibbonGroup.hpp"
 #include "PageView.hpp"
 
 #include <QFontDatabase>
 #include <QColorDialog>
 #include <QTextCharFormat>
 #include <QTextBlockFormat>
-#include <QTextList>
 #include <QActionGroup>
 #include <QToolButton>
-#include <QWidgetAction>
+#include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPen>
 
@@ -50,81 +50,202 @@ QColor highlightColorToQt(const QString& value)
 
 } // namespace
 
+// 功能区样式常量
+namespace RibbonStyle {
+    constexpr int buttonIconSize = 16;
+    constexpr int comboMinWidth = 140;
+    constexpr int comboHeight = 22;
+    constexpr int fontSizeComboWidth = 56;
+    constexpr int rowHeight = 30;
+    constexpr int ribbonHeight = 110;
+}
+
 FormatToolbar::FormatToolbar(QWidget* parent)
-    : QToolBar("格式", parent)
+    : QWidget(parent)
 {
     setupUi();
     setupConnections();
 }
 
+// 创建带关联 QAction 的 QToolButton，outAction 输出 action 指针供信号连接
+QToolButton* makeActionButton(QWidget* parent, QAction** outAction, const QString& text, const QString& tip, bool checkable)
+{
+    auto* action = new QAction(text, parent);
+    action->setCheckable(checkable);
+    action->setToolTip(tip);
+
+    auto* btn = new QToolButton(parent);
+    btn->setDefaultAction(action);
+    btn->setIconSize(QSize(RibbonStyle::buttonIconSize, RibbonStyle::buttonIconSize));
+    btn->setAutoRaise(true);
+    btn->setStyleSheet(
+        "QToolButton { padding: 2px 6px; }"
+        "QToolButton:checked { background-color: #c0d8f0; border: 1px solid #8bb8e0; border-radius: 3px; }"
+    );
+    *outAction = action;
+    return btn;
+}
+
+// 无关联 action 的菜单按钮（信号通过 QMenu::triggered 发射）
+QToolButton* makeMenuButton(QWidget* parent, const QString& text, const QString& tip, QMenu* menu)
+{
+    auto* btn = new QToolButton(parent);
+    btn->setText(text);
+    btn->setToolTip(tip);
+    btn->setMenu(menu);
+    btn->setPopupMode(QToolButton::InstantPopup);
+    btn->setIconSize(QSize(RibbonStyle::buttonIconSize, RibbonStyle::buttonIconSize));
+    btn->setAutoRaise(true);
+    btn->setStyleSheet(
+        "QToolButton { padding: 2px 6px; }"
+    );
+    return btn;
+}
+
+// 简单的纯文本按钮（无 action），返回 QToolButton 指针
+QToolButton* makeTextButton(QWidget* parent, const QString& text, const QString& tip)
+{
+    auto* btn = new QToolButton(parent);
+    btn->setText(text);
+    btn->setToolTip(tip);
+    btn->setIconSize(QSize(RibbonStyle::buttonIconSize, RibbonStyle::buttonIconSize));
+    btn->setAutoRaise(true);
+    btn->setStyleSheet(
+        "QToolButton { padding: 2px 6px; }"
+    );
+    return btn;
+}
+
 void FormatToolbar::setupUi()
 {
-    setMovable(false);
-    setIconSize(QSize(16, 16));
+    auto* mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    // 字体选择：使用 QFontComboBox，预设简体中文字体
-    addWidget(new QLabel("字体 "));
+    // 选项卡栏
+    tabBar_ = new QTabBar(this);
+    tabBar_->setExpanding(false);
+    tabBar_->setDrawBase(false);
+    tabBar_->addTab("开始");
+    tabBar_->addTab("页面");
+    tabBar_->setStyleSheet(
+        "QTabBar::tab { padding: 6px 20px; border: none; background: transparent; font-size: 12px; }"
+        "QTabBar::tab:selected { background-color: #f0f0f0; font-weight: bold; }"
+        "QTabBar::tab:hover:!selected { background-color: #e8e8e8; }"
+    );
+    mainLayout->addWidget(tabBar_);
+
+    // 选项卡内容区
+    tabPages_ = new QStackedWidget(this);
+    tabPages_->setStyleSheet("QStackedWidget { background-color: #f0f0f0; }");
+
+    // ---- 开始选项卡 ----
+    auto* homePage = new QWidget(this);
+    auto* homeLayout = new QHBoxLayout(homePage);
+    homeLayout->setContentsMargins(4, 4, 4, 4);
+    homeLayout->setSpacing(0);
+
+    // 字体组
+    auto* fontGroup = new RibbonGroup("字体", this);
+    setupFontGroup(fontGroup);
+    homeLayout->addWidget(fontGroup);
+
+    // 段落组
+    auto* paragraphGroup = new RibbonGroup("段落", this);
+    setupParagraphGroup(paragraphGroup);
+    homeLayout->addWidget(paragraphGroup);
+
+    homeLayout->addStretch();
+    tabPages_->addWidget(homePage);
+
+    // ---- 页面选项卡 ----
+    auto* pagePage = new QWidget(this);
+    auto* pageLayout = new QHBoxLayout(pagePage);
+    pageLayout->setContentsMargins(4, 4, 4, 4);
+    pageLayout->setSpacing(0);
+
+    auto* pageGroup = new RibbonGroup("页面设置", this);
+    setupPageGroup(pageGroup);
+    pageLayout->addWidget(pageGroup);
+
+    pageLayout->addStretch();
+    tabPages_->addWidget(pagePage);
+
+    mainLayout->addWidget(tabPages_);
+
+    // 选项卡切换
+    connect(tabBar_, &QTabBar::currentChanged, tabPages_, &QStackedWidget::setCurrentIndex);
+
+    setFixedHeight(RibbonStyle::ribbonHeight);
+    setStyleSheet("FormatToolbar { border-bottom: 1px solid #d0d0d0; }");
+}
+
+void FormatToolbar::setupFontGroup(RibbonGroup* group)
+{
+    // 行 0：字体 + 字号
     fontCombo_ = new QFontComboBox(this);
-    fontCombo_->setMinimumWidth(160);
+    fontCombo_->setMinimumWidth(RibbonStyle::comboMinWidth);
+    fontCombo_->setMaximumHeight(RibbonStyle::comboHeight);
     fontCombo_->setWritingSystem(QFontDatabase::SimplifiedChinese);
-    addWidget(fontCombo_);
+    group->addWidget(fontCombo_, 0, 0, 1, 3);
 
-    // 字号选择：可编辑下拉框，预置常用字号，默认 12pt
-    addSeparator();
-    addWidget(new QLabel("字号 "));
     fontSizeCombo_ = new QComboBox(this);
     fontSizeCombo_->setEditable(true);
-    fontSizeCombo_->setMinimumWidth(60);
+    fontSizeCombo_->setMinimumWidth(RibbonStyle::fontSizeComboWidth);
+    fontSizeCombo_->setMaximumHeight(RibbonStyle::comboHeight);
     QStringList sizes;
     sizes << "8" << "9" << "10" << "10.5" << "11" << "12" << "14" << "16"
           << "18" << "20" << "22" << "24" << "26" << "28" << "36" << "48" << "72";
     fontSizeCombo_->addItems(sizes);
     fontSizeCombo_->setCurrentText("12");
-    addWidget(fontSizeCombo_);
+    group->addWidget(fontSizeCombo_, 0, 3, 1, 1);
 
-    // 样式按钮组：粗体/斜体/下划线/删除线，均为可切换状态
-    addSeparator();
+    group->setRowMinimumHeight(0, RibbonStyle::rowHeight);
 
-    boldAction_ = addAction("B");
-    boldAction_->setCheckable(true);
-    boldAction_->setToolTip("加粗 (Ctrl+B)");
-    QFont boldFont = boldAction_->font();
+    // 行 1：样式按钮行
+    // 粗体
+    auto* boldBtn = makeActionButton(this, &boldAction_, "B", "加粗 (Ctrl+B)", true);
+    QFont boldFont = boldBtn->font();
     boldFont.setBold(true);
-    boldAction_->setFont(boldFont);
+    boldBtn->setFont(boldFont);
+    group->addWidget(boldBtn, 1, 0);
 
-    italicAction_ = addAction("I");
-    italicAction_->setCheckable(true);
-    italicAction_->setToolTip("斜体 (Ctrl+I)");
-    QFont italicFont = italicAction_->font();
+    // 斜体
+    auto* italicBtn = makeActionButton(this, &italicAction_, "I", "斜体 (Ctrl+I)", true);
+    QFont italicFont = italicBtn->font();
     italicFont.setItalic(true);
-    italicAction_->setFont(italicFont);
+    italicBtn->setFont(italicFont);
+    group->addWidget(italicBtn, 1, 1);
 
-    underlineAction_ = addAction("U");
-    underlineAction_->setCheckable(true);
-    underlineAction_->setToolTip("下划线 (Ctrl+U)");
-    QFont ulFont = underlineAction_->font();
+    // 下划线
+    auto* ulBtn = makeActionButton(this, &underlineAction_, "U", "下划线 (Ctrl+U)", true);
+    QFont ulFont = ulBtn->font();
     ulFont.setUnderline(true);
-    underlineAction_->setFont(ulFont);
+    ulBtn->setFont(ulFont);
+    group->addWidget(ulBtn, 1, 2);
 
-    strikeAction_ = addAction("~~S~~");
-    strikeAction_->setCheckable(true);
-    strikeAction_->setToolTip("删除线");
+    // 删除线
+    auto* strikeBtn = makeActionButton(this, &strikeAction_, "S", "删除线", true);
+    QFont strikeFont = strikeBtn->font();
+    strikeFont.setStrikeOut(true);
+    strikeBtn->setFont(strikeFont);
+    group->addWidget(strikeBtn, 1, 3);
 
-    // 颜色按钮组：文字颜色和背景色，点击弹出颜色选择对话框
-    addSeparator();
+    // 分隔
+    group->addColumnSpacer(4, 6);
 
-    textColorAction_ = addAction("A");
-    textColorAction_->setToolTip("文字颜色");
-    QFont colorFont = textColorAction_->font();
+    // 文字颜色
+    auto* colorBtn = makeActionButton(this, &textColorAction_, "A", "文字颜色", false);
+    QFont colorFont = colorBtn->font();
     colorFont.setBold(true);
-    textColorAction_->setFont(colorFont);
+    colorBtn->setFont(colorFont);
+    group->addWidget(colorBtn, 1, 5);
 
-    backgroundColorAction_ = addAction("底");
-    backgroundColorAction_->setToolTip("字符底纹");
-    QFont bgFont = backgroundColorAction_->font();
-    bgFont.setBold(true);
-    backgroundColorAction_->setFont(bgFont);
+    // 字符底纹
+    auto* bgBtn = makeActionButton(this, &backgroundColorAction_, "底", "字符底纹", false);
+    group->addWidget(bgBtn, 1, 6);
 
+    // 高亮菜单
     highlightMenu_ = new QMenu(this);
     addHighlightColor(*highlightMenu_, "黄色", "yellow");
     addHighlightColor(*highlightMenu_, "绿色", "green");
@@ -132,58 +253,58 @@ void FormatToolbar::setupUi()
     addHighlightColor(*highlightMenu_, "红色", "red");
     addHighlightColor(*highlightMenu_, "蓝色", "blue");
     addHighlightColor(*highlightMenu_, "无高亮", "none");
-    highlightAction_ = addAction("H");
-    highlightAction_->setToolTip("高亮显示");
-    if (auto* button = qobject_cast<QToolButton*>(widgetForAction(highlightAction_))) {
-        button->setMenu(highlightMenu_);
-        button->setPopupMode(QToolButton::InstantPopup);
-    }
+    auto* hlBtn = makeMenuButton(this, "H", "高亮显示", highlightMenu_);
+    group->addWidget(hlBtn, 1, 7);
 
-    borderAction_ = addAction("□");
-    borderAction_->setCheckable(true);
-    borderAction_->setToolTip("字符边框");
+    // 字符边框
+    auto* borderBtn = makeActionButton(this, &borderAction_, "□", "字符边框", true);
+    group->addWidget(borderBtn, 1, 8);
 
-    enclosedCircleAction_ = addAction("○");
-    enclosedCircleAction_->setCheckable(true);
-    enclosedCircleAction_->setToolTip("带圈字符");
+    // 带圈字符
+    auto* circleBtn = makeActionButton(this, &enclosedCircleAction_, "○", "带圈字符", true);
+    group->addWidget(circleBtn, 1, 9);
 
+    // 大小写菜单
     changeCaseMenu_ = new QMenu(this);
     upperCaseAction_ = changeCaseMenu_->addAction("大写");
     lowerCaseAction_ = changeCaseMenu_->addAction("小写");
     titleCaseAction_ = changeCaseMenu_->addAction("首字母大写");
-    QAction* changeCaseAction = addAction("Aa");
-    changeCaseAction->setToolTip("更改大小写");
-    if (auto* button = qobject_cast<QToolButton*>(widgetForAction(changeCaseAction))) {
-        button->setMenu(changeCaseMenu_);
-        button->setPopupMode(QToolButton::InstantPopup);
-    }
+    auto* caseBtn = makeMenuButton(this, "Aa", "更改大小写", changeCaseMenu_);
+    group->addWidget(caseBtn, 1, 10);
+}
 
-    // 对齐按钮组：使用 QActionGroup 保持互斥选择
-    addSeparator();
-
+void FormatToolbar::setupParagraphGroup(RibbonGroup* group)
+{
     QActionGroup* alignGroup = new QActionGroup(this);
     alignGroup->setExclusive(true);
 
-    alignLeftAction_ = addAction("≡");
-    alignLeftAction_->setCheckable(true);
-    alignLeftAction_->setToolTip("左对齐");
-    alignLeftAction_->setChecked(true);
+    // 左对齐
+    auto* leftBtn = makeActionButton(this, &alignLeftAction_, "≡", "左对齐", true);
+    group->addWidget(leftBtn, 0, 0);
     alignGroup->addAction(alignLeftAction_);
 
-    alignCenterAction_ = addAction("≡");
-    alignCenterAction_->setCheckable(true);
-    alignCenterAction_->setToolTip("居中");
+    // 居中
+    auto* centerBtn = makeActionButton(this, &alignCenterAction_, "≡", "居中", true);
+    group->addWidget(centerBtn, 0, 1);
     alignGroup->addAction(alignCenterAction_);
 
-    alignRightAction_ = addAction("≡");
-    alignRightAction_->setCheckable(true);
-    alignRightAction_->setToolTip("右对齐");
+    // 右对齐
+    auto* rightBtn = makeActionButton(this, &alignRightAction_, "≡", "右对齐", true);
+    group->addWidget(rightBtn, 0, 2);
     alignGroup->addAction(alignRightAction_);
 
-    alignJustifyAction_ = addAction("≡");
-    alignJustifyAction_->setCheckable(true);
-    alignJustifyAction_->setToolTip("两端对齐");
+    // 两端对齐
+    auto* justifyBtn = makeActionButton(this, &alignJustifyAction_, "≡", "两端对齐", true);
+    group->addWidget(justifyBtn, 0, 3);
     alignGroup->addAction(alignJustifyAction_);
+}
+
+void FormatToolbar::setupPageGroup(RibbonGroup* group)
+{
+    auto* pageBtn = makeTextButton(this, "页面设置", "页面尺寸和页边距");
+    pageBtn->setMinimumWidth(80);
+    group->addWidget(pageBtn, 0, 0);
+    connect(pageBtn, &QToolButton::clicked, this, &FormatToolbar::pageSetupRequested);
 }
 
 void FormatToolbar::setupConnections()
@@ -205,7 +326,6 @@ void FormatToolbar::setupConnections()
     connect(backgroundColorAction_, &QAction::triggered,
             this, &FormatToolbar::onBackgroundColorClicked);
 
-    // 高亮、字符边框和带圈字符
     connect(highlightMenu_, &QMenu::triggered,
             this, &FormatToolbar::onHighlightSelected);
     connect(borderAction_, &QAction::toggled,
@@ -213,7 +333,6 @@ void FormatToolbar::setupConnections()
     connect(enclosedCircleAction_, &QAction::toggled,
             this, &FormatToolbar::onEnclosedCircleToggled);
 
-    // 大小写转换
     connect(upperCaseAction_, &QAction::triggered,
             this, [this]() { onChangeCaseSelected(upperCaseAction_); });
     connect(lowerCaseAction_, &QAction::triggered,
@@ -221,7 +340,6 @@ void FormatToolbar::setupConnections()
     connect(titleCaseAction_, &QAction::triggered,
             this, [this]() { onChangeCaseSelected(titleCaseAction_); });
 
-    // 对齐按钮：通过 lambda 中转以复用 onAlignmentChanged 统一处理
     connect(alignLeftAction_, &QAction::triggered,
             this, [this]() { onAlignmentChanged(alignLeftAction_); });
     connect(alignCenterAction_, &QAction::triggered,
@@ -255,21 +373,18 @@ void FormatToolbar::setEditor(PageView* editor)
 void FormatToolbar::onFontFamilyChanged(const QString& family)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     fmt.setFontFamilies({family});
     editor_->mergeCurrentCharFormat(fmt);
-    editor_->setFocus();  // 操作后将焦点还给编辑器，便于继续输入
+    editor_->setFocus();
 }
 
 void FormatToolbar::onFontSizeChanged(const QString& sizeText)
 {
     if (!editor_) return;
-
     bool ok = false;
     qreal size = sizeText.toDouble(&ok);
     if (!ok || size <= 0) return;
-
     QTextCharFormat fmt;
     fmt.setFontPointSize(size);
     editor_->mergeCurrentCharFormat(fmt);
@@ -279,7 +394,6 @@ void FormatToolbar::onFontSizeChanged(const QString& sizeText)
 void FormatToolbar::onBoldToggled(bool checked)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     fmt.setFontWeight(checked ? QFont::Bold : QFont::Normal);
     editor_->mergeCurrentCharFormat(fmt);
@@ -289,7 +403,6 @@ void FormatToolbar::onBoldToggled(bool checked)
 void FormatToolbar::onItalicToggled(bool checked)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     fmt.setFontItalic(checked);
     editor_->mergeCurrentCharFormat(fmt);
@@ -299,7 +412,6 @@ void FormatToolbar::onItalicToggled(bool checked)
 void FormatToolbar::onUnderlineToggled(bool checked)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     fmt.setUnderlineStyle(checked ? QTextCharFormat::SingleUnderline
                                   : QTextCharFormat::NoUnderline);
@@ -310,7 +422,6 @@ void FormatToolbar::onUnderlineToggled(bool checked)
 void FormatToolbar::onStrikeToggled(bool checked)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     fmt.setFontStrikeOut(checked);
     editor_->mergeCurrentCharFormat(fmt);
@@ -320,10 +431,8 @@ void FormatToolbar::onStrikeToggled(bool checked)
 void FormatToolbar::onTextColorClicked()
 {
     if (!editor_) return;
-
     QColor color = QColorDialog::getColor(editor_->textColor(), this, "选择文字颜色");
     if (!color.isValid()) return;
-
     QTextCharFormat fmt;
     fmt.setForeground(color);
     editor_->mergeCurrentCharFormat(fmt);
@@ -333,10 +442,8 @@ void FormatToolbar::onTextColorClicked()
 void FormatToolbar::onBackgroundColorClicked()
 {
     if (!editor_) return;
-
     QColor color = QColorDialog::getColor(editor_->textBackgroundColor(), this, "选择背景颜色");
     if (!color.isValid()) return;
-
     QTextCharFormat fmt;
     fmt.setBackground(color);
     editor_->mergeCurrentCharFormat(fmt);
@@ -346,9 +453,7 @@ void FormatToolbar::onBackgroundColorClicked()
 void FormatToolbar::onHighlightSelected(QAction* action)
 {
     if (!editor_) return;
-
     const QString value = action->data().toString();
-
     QTextCharFormat fmt;
     fmt.setProperty(HighlightColorProperty, value);
     if (value == "none") {
@@ -366,7 +471,6 @@ void FormatToolbar::onHighlightSelected(QAction* action)
 void FormatToolbar::onBorderToggled(bool checked)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     if (checked) {
         fmt.setProperty(BorderColorProperty, QStringLiteral("000000"));
@@ -380,7 +484,6 @@ void FormatToolbar::onBorderToggled(bool checked)
 void FormatToolbar::onEnclosedCircleToggled(bool checked)
 {
     if (!editor_) return;
-
     QTextCharFormat fmt;
     fmt.setProperty(EnclosedCircleProperty, checked);
     editor_->mergeCurrentCharFormat(fmt);
@@ -390,7 +493,6 @@ void FormatToolbar::onEnclosedCircleToggled(bool checked)
 void FormatToolbar::onChangeCaseSelected(QAction* action)
 {
     if (!editor_) return;
-
     if (action == upperCaseAction_) {
         editor_->applyTextCase(PageView::TextCaseTransform::Upper);
     } else if (action == lowerCaseAction_) {
@@ -404,7 +506,6 @@ void FormatToolbar::onChangeCaseSelected(QAction* action)
 void FormatToolbar::onAlignmentChanged(QAction* action)
 {
     if (!editor_) return;
-
     Qt::Alignment align = Qt::AlignLeft;
     if (action == alignCenterAction_) {
         align = Qt::AlignHCenter;
@@ -413,7 +514,6 @@ void FormatToolbar::onAlignmentChanged(QAction* action)
     } else if (action == alignJustifyAction_) {
         align = Qt::AlignJustify;
     }
-
     QTextBlockFormat blockFmt;
     blockFmt.setAlignment(align);
     QTextCursor cursor = editor_->textCursor();
@@ -422,32 +522,33 @@ void FormatToolbar::onAlignmentChanged(QAction* action)
     editor_->setFocus();
 }
 
-/**
- * 同步工具栏状态到当前编辑器光标处的格式
- * 为避免信号循环导致死循环，在更新 UI 前临时阻断控件信号
- */
 void FormatToolbar::updateStateFromEditor()
 {
     if (!editor_) return;
 
     QTextCharFormat fmt = editor_->currentCharFormat();
 
+    // 粗体
     boldAction_->blockSignals(true);
     boldAction_->setChecked(fmt.fontWeight() >= QFont::Bold);
     boldAction_->blockSignals(false);
 
+    // 斜体
     italicAction_->blockSignals(true);
     italicAction_->setChecked(fmt.fontItalic());
     italicAction_->blockSignals(false);
 
+    // 下划线
     underlineAction_->blockSignals(true);
     underlineAction_->setChecked(fmt.underlineStyle() != QTextCharFormat::NoUnderline);
     underlineAction_->blockSignals(false);
 
+    // 删除线
     strikeAction_->blockSignals(true);
     strikeAction_->setChecked(fmt.fontStrikeOut());
     strikeAction_->blockSignals(false);
 
+    // 字体
     fontCombo_->blockSignals(true);
     const QStringList families = fmt.property(QTextFormat::FontFamilies).toStringList();
     if (!families.isEmpty()) {
@@ -455,23 +556,25 @@ void FormatToolbar::updateStateFromEditor()
     }
     fontCombo_->blockSignals(false);
 
+    // 字号
     fontSizeCombo_->blockSignals(true);
     if (fmt.hasProperty(QTextFormat::FontPointSize)) {
         fontSizeCombo_->setCurrentText(QString::number(fmt.fontPointSize()));
     }
     fontSizeCombo_->blockSignals(false);
 
-    // 同步字符边框和带圈字符状态
+    // 字符边框
     borderAction_->blockSignals(true);
     const QVariant borderProp = fmt.property(BorderColorProperty);
     borderAction_->setChecked(borderProp.isValid() && !borderProp.toString().isEmpty());
     borderAction_->blockSignals(false);
 
+    // 带圈字符
     enclosedCircleAction_->blockSignals(true);
     enclosedCircleAction_->setChecked(fmt.property(EnclosedCircleProperty).toBool());
     enclosedCircleAction_->blockSignals(false);
 
-    // 同步对齐状态：清除各按钮信号后设置当前对齐方式
+    // 对齐状态
     QTextBlockFormat blockFmt = editor_->textCursor().blockFormat();
     alignLeftAction_->blockSignals(true);
     alignCenterAction_->blockSignals(true);
