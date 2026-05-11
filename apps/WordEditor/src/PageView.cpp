@@ -110,6 +110,11 @@ void PageView::setDocumentMargins(qreal left, qreal top, qreal right, qreal bott
     viewport()->update();
 }
 
+qreal PageView::pageMarginLeft() const   { return pageMarginLeft_; }
+qreal PageView::pageMarginTop() const    { return pageMarginTop_; }
+qreal PageView::pageMarginRight() const  { return pageMarginRight_; }
+qreal PageView::pageMarginBottom() const { return pageMarginBottom_; }
+
 void PageView::setZoom(qreal zoom)
 {
     if (qFuzzyCompare(zoom_, zoom)) return;

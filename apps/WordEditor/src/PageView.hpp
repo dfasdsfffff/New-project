@@ -54,6 +54,10 @@ public:
 
     /// @brief 设置文档边距（单位：磅）
     void setDocumentMargins(qreal left, qreal top, qreal right, qreal bottom);
+    qreal pageMarginLeft() const;
+    qreal pageMarginTop() const;
+    qreal pageMarginRight() const;
+    qreal pageMarginBottom() const;
 
     /// @brief 设置缩放比例（1.0 = 100%）
     void setZoom(qreal zoom);

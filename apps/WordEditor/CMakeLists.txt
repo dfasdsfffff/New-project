@@ -14,6 +14,7 @@ set(EDITOR_SOURCES
     src/ImageStore.cpp
     src/FormatToolbar.cpp
     src/PageView.cpp
+    src/PageSetupDialog.cpp
 )
 
 set(EDITOR_HEADERS
@@ -23,6 +24,7 @@ set(EDITOR_HEADERS
     src/ImageStore.hpp
     src/FormatToolbar.hpp
     src/PageView.hpp
+    src/PageSetupDialog.hpp
 )
 
 add_executable(${EDITOR_TARGET} ${EDITOR_SOURCES} ${EDITOR_HEADERS})

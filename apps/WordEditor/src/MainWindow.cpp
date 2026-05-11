@@ -14,6 +14,8 @@
 #include <QClipboard>
 #include <QFileInfo>
 
+#include "PageSetupDialog.hpp"
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , editor_(new PageView(this))
@@ -382,28 +384,23 @@ void MainWindow::onInsertTable()
 
 void MainWindow::onPageSetup()
 {
-    bool ok = false;
+    PageSetupDialog dialog(this);
 
-    // 预设页面尺寸选项
-    QStringList items;
-    items << "A4 (210 x 297 mm)"
-          << "A3 (297 x 420 mm)"
-          << "A5 (148 x 210 mm)"
-          << "Letter (8.5 x 11 inch)"
-          << "Legal (8.5 x 14 inch)";
+    // 用当前编辑器状态初始化对话框
+    dialog.setPageSizeInPoints(editor_->pageSize().width(), editor_->pageSize().height());
+    dialog.setMarginsInPoints(editor_->pageMarginLeft(), editor_->pageMarginTop(),
+                              editor_->pageMarginRight(), editor_->pageMarginBottom());
 
-    QString choice = QInputDialog::getItem(this, "页面设置", "页面尺寸:",
-                                            items, 0, false, &ok);
-    if (!ok) return;
+    if (dialog.exec() != QDialog::Accepted) return;
 
-    QSizeF newSize = PageSizes::A4();
-    if (choice.startsWith("A3"))      newSize = PageSizes::A3();
-    else if (choice.startsWith("A5")) newSize = PageSizes::A5();
-    else if (choice.startsWith("Letter")) newSize = PageSizes::Letter();
-    else if (choice.startsWith("Legal"))  newSize = PageSizes::Legal();
+    // 应用页面尺寸和页边距
+    editor_->setPageSize(dialog.pageSizeInPoints());
+    editor_->setDocumentMargins(dialog.marginLeftInPoints(), dialog.marginTopInPoints(),
+                                dialog.marginRightInPoints(), dialog.marginBottomInPoints());
 
-    editor_->setPageSize(newSize);
-    messageLabel_->setText(QString("页面尺寸: %1").arg(choice));
+    QSizeF size = dialog.pageSizeInPoints();
+    messageLabel_->setText(QString("页面设置: %.0f x %.0f mm")
+        .arg(size.width() * 25.4 / 72.0).arg(size.height() * 25.4 / 72.0));
 }
 
 void MainWindow::onEditorModified()
@@ -481,10 +478,14 @@ void MainWindow::doExport()
 
     auto model = mapper_->exportModel(*editor_->document(), *controller_->wordDocument());
 
-    // 将当前页面尺寸写入文档模型（磅 → twips），保存时持久化到 docx
+    // 将当前页面尺寸和边距写入文档模型（磅 → twips），保存时持久化到 docx
     QSizeF size = editor_->pageSize();
     model.pageSetup.pageWidthTwips = static_cast<std::int32_t>(size.width() * 20.0);
     model.pageSetup.pageHeightTwips = static_cast<std::int32_t>(size.height() * 20.0);
+    model.pageSetup.marginTopTwips = static_cast<std::int32_t>(editor_->pageMarginTop() * 20.0);
+    model.pageSetup.marginBottomTwips = static_cast<std::int32_t>(editor_->pageMarginBottom() * 20.0);
+    model.pageSetup.marginLeftTwips = static_cast<std::int32_t>(editor_->pageMarginLeft() * 20.0);
+    model.pageSetup.marginRightTwips = static_cast<std::int32_t>(editor_->pageMarginRight() * 20.0);
 
     controller_->wordDocument()->replaceBody(model);
 }
