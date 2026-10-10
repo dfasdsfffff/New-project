@@ -104,13 +104,17 @@ add_custom_command(TARGET ${EDITOR_TARGET} POST_BUILD
 )
 
 if(CPPWORDKIT_USE_LOCAL_DEPS)
+    # MSVC 的 zlib.dll 与 MinGW 的 libzlib.dll 使用不同文件名。
+    find_file(CPPWORDKIT_ZLIB_RUNTIME
+        NAMES zlib.dll libzlib.dll
+        PATHS "${CPPWORDKIT_LOCAL_ZLIB_ROOT}/bin" NO_DEFAULT_PATH REQUIRED)
     add_custom_command(TARGET ${EDITOR_TARGET} POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${CPPWORDKIT_LOCAL_LIBXML2_ROOT}/bin/libxml2.dll"
             "${_out_dir}/libxml2.dll"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "${CPPWORDKIT_LOCAL_ZLIB_ROOT}/bin/libzlib.dll"
-            "${_out_dir}/libzlib.dll"
+            "${CPPWORDKIT_ZLIB_RUNTIME}"
+            "${_out_dir}/"
         COMMENT "Copying dependency DLLs..."
     )
 endif()

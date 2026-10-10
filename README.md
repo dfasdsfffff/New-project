@@ -55,6 +55,25 @@ cmake --build build
 ctest --test-dir build
 ```
 
+### Windows / MSVC dependencies
+
+MSVC builds require MSVC-compatible x64 libraries; do not reuse MinGW `.dll.a`
+libraries. To build zlib 1.3.1 and libxml2 2.12.10 from existing source trees:
+
+```powershell
+./cmake/build-msvc-deps.ps1 -ZlibSource "D:/sources/zlib-1.3.1" -LibXml2Source "D:/sources/libxml2-v2.12.10"
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DCPPWORDKIT_USE_LOCAL_DEPS=ON -DCPPWORDKIT_LOCAL_ZLIB_ROOT="$PWD/build-msvc-deps/install" -DCPPWORDKIT_LOCAL_LIBXML2_ROOT="$PWD/build-msvc-deps/install"
+cmake --build build --config Debug --parallel 4
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+Replace the source paths with your local folders. The helper installs Release
+DLLs and import libraries into `build-msvc-deps/install`; the shared C API can
+also be used by the Debug application. VS Code workspace settings use this
+installation. Use a separate build directory when switching to MinGW.
+To enable the editor, also set `CPPWORDKIT_BUILD_WORD_EDITOR=ON` and point
+`CMAKE_PREFIX_PATH` at your Qt6 **msvc2022_64** installation.
+
 ## Example
 
 Core document processing:
