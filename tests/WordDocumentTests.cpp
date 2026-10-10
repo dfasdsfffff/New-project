@@ -59,6 +59,26 @@ constexpr const char* imagePlaceholderDocumentXml = R"(<?xml version="1.0" encod
 </w:document>
 )";
 
+constexpr const char* stylesXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="Heading 1"/>
+  </w:style>
+  <w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont">
+    <w:name w:val="Default Paragraph Font"/>
+  </w:style>
+  <w:style w:type="character" w:styleId="Strong">
+    <w:name w:val="Strong"/>
+  </w:style>
+  <w:style w:type="table" w:styleId="TableGrid">
+    <w:name w:val="Table Grid"/>
+  </w:style>
+</w:styles>
+)";
+
 void writeTinyPng(const std::filesystem::path& path) {
     const std::vector<std::uint8_t> png = {
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -92,6 +112,32 @@ int main() {
     auto reopened = cppwordkit::WordDocument::open(output);
     assert(reopened.text() == "Hello CppWordKit");
     std::filesystem::remove(output);
+
+    const auto stylesInput = std::filesystem::temp_directory_path() / "cppwordkit_styles_input.docx";
+    cppwordkit::ZipArchive stylesArchive;
+    stylesArchive.setText("word/document.xml", splitDocumentXml);
+    stylesArchive.setText("word/styles.xml", stylesXml);
+    stylesArchive.write(stylesInput);
+
+    auto stylesDocument = cppwordkit::WordDocument::open(stylesInput);
+    const auto paragraphStyles = stylesDocument.paragraphStyles();
+    const auto characterStyles = stylesDocument.characterStyles();
+    assert(paragraphStyles.size() == 2);
+    assert(characterStyles.size() == 2);
+    assert(paragraphStyles[0].styleId == "Normal");
+    assert(paragraphStyles[0].name == "Normal");
+    assert(paragraphStyles[0].type == cppwordkit::StyleType::Paragraph);
+    assert(paragraphStyles[0].isDefault);
+    assert(paragraphStyles[1].styleId == "Heading1");
+    assert(paragraphStyles[1].name == "Heading 1");
+    assert(!paragraphStyles[1].isDefault);
+    assert(characterStyles[0].styleId == "DefaultParagraphFont");
+    assert(characterStyles[0].type == cppwordkit::StyleType::Character);
+    assert(characterStyles[0].isDefault);
+    assert(characterStyles[1].styleId == "Strong");
+    assert(characterStyles[1].name == "Strong");
+    assert(!characterStyles[1].isDefault);
+    std::filesystem::remove(stylesInput);
 
     const auto splitInput = std::filesystem::temp_directory_path() / "cppwordkit_split_input.docx";
     const auto splitOutput = std::filesystem::temp_directory_path() / "cppwordkit_split_output.docx";

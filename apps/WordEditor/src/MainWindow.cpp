@@ -23,6 +23,7 @@
 #include <QFontDatabase>
 #include <QStatusBar>
 #include <QMenuBar>
+#include <QCloseEvent>
 
 namespace {
 
@@ -509,37 +510,46 @@ void MainWindow::connectSignals()
 // 文件操作
 // ═══════════════════════════════════════════════════════════════
 
+MainWindow::~MainWindow()
+{
+    delete mapper_;
+}
+
+bool MainWindow::confirmSaveChanges()
+{
+    if (!controller_->isModified()) return true;
+    const auto result = QMessageBox::question(this, "未保存的修改",
+        "当前文档已修改，是否保存？",
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+        QMessageBox::Save);
+    if (result == QMessageBox::Discard) return true;
+    if (result != QMessageBox::Save) return false;
+    onSaveDocument();
+    // 保存失败或取消另存为时，保留当前文档和窗口。
+    return !controller_->isModified();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    if (confirmSaveChanges()) {
+        SARibbonMainWindow::closeEvent(event);
+    } else {
+        event->ignore();
+    }
+}
+
 void MainWindow::onNewDocument()
 {
-    if (controller_->isModified()) {
-        auto result = QMessageBox::question(this, "新建文档",
-            "当前文档已修改，是否保存？",
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-        if (result == QMessageBox::Cancel) return;
-        if (result == QMessageBox::Save) {
-            onSaveDocument();
-            if (controller_->isModified()) return;
-        }
-    }
+    if (!confirmSaveChanges()) return;
     if (controller_->newDocument()) {
         imageStore_->clear();
-        editor_->clear();
-        editor_->document()->setModified(false);
+        doImport();
     }
 }
 
 void MainWindow::onOpenDocument()
 {
-    if (controller_->isModified()) {
-        auto result = QMessageBox::question(this, "打开文档",
-            "当前文档已修改，是否保存？",
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-        if (result == QMessageBox::Cancel) return;
-        if (result == QMessageBox::Save) {
-            onSaveDocument();
-            if (controller_->isModified()) return;
-        }
-    }
+    if (!confirmSaveChanges()) return;
     QString path = QFileDialog::getOpenFileName(this, "打开文档", {},
         "Word 文档 (*.docx);;所有文件 (*)");
     if (path.isEmpty()) return;
@@ -551,22 +561,34 @@ void MainWindow::onOpenDocument()
 
 void MainWindow::onSaveDocument()
 {
-    doExport();
     if (controller_->currentPath().isEmpty()) {
         onSaveDocumentAs();
         return;
     }
-    controller_->saveDocument();
+    saveToPath(controller_->currentPath());
+}
+
+bool MainWindow::saveToPath(const QString& path)
+{
+    try {
+        doExport();
+        if (!controller_->saveDocumentAs(path)) return false;
+        // 同步 Qt 的保存点，否则后续编辑不会再次发出修改状态变化信号。
+        editor_->document()->setModified(false);
+        return true;
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "保存失败", QString::fromUtf8(e.what()));
+        return false;
+    }
 }
 
 void MainWindow::onSaveDocumentAs()
 {
-    doExport();
     QString path = QFileDialog::getSaveFileName(this, "另存为", {},
         "Word 文档 (*.docx)");
     if (path.isEmpty()) return;
     if (!path.endsWith(".docx", Qt::CaseInsensitive)) path += ".docx";
-    controller_->saveDocumentAs(path);
+    saveToPath(path);
 }
 
 void MainWindow::onExportPdf()
@@ -674,8 +696,9 @@ void MainWindow::onPageSetup()
     editor_->setPageSize(dialog.pageSizeInPoints());
     editor_->setDocumentMargins(dialog.marginLeftInPoints(), dialog.marginTopInPoints(),
                                 dialog.marginRightInPoints(), dialog.marginBottomInPoints());
+    editor_->document()->setModified(true);
     QSizeF size = dialog.pageSizeInPoints();
-    messageLabel_->setText(QString("页面设置: %.0f x %.0f mm")
+    messageLabel_->setText(QString("页面设置: %1 x %2 mm")
         .arg(size.width() * 25.4 / 72.0).arg(size.height() * 25.4 / 72.0));
 }
 
@@ -917,8 +940,8 @@ void MainWindow::doImport()
     } else {
         editor_->setPageSize(PageSizes::A4());
     }
-    if (model.pageSetup.marginLeftTwips || model.pageSetup.marginTopTwips ||
-        model.pageSetup.marginRightTwips || model.pageSetup.marginBottomTwips) {
+    {
+        // 未声明页边距时也恢复默认值，避免继承上一个文档的页面设置。
         qreal l = model.pageSetup.marginLeftTwips.value_or(1440) / 20.0;
         qreal t = model.pageSetup.marginTopTwips.value_or(1440) / 20.0;
         qreal r = model.pageSetup.marginRightTwips.value_or(1440) / 20.0;

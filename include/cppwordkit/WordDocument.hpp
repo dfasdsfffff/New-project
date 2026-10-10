@@ -80,6 +80,11 @@ public:
     void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);
     [[nodiscard]] ParagraphStyle paragraphStyle(std::size_t paragraphIndex) const;
 
+    /// @brief 枚举 word/styles.xml 中的段落样式
+    [[nodiscard]] std::vector<StyleInfo> paragraphStyles() const;
+    /// @brief 枚举 word/styles.xml 中的字符样式
+    [[nodiscard]] std::vector<StyleInfo> characterStyles() const;
+
     // 旧版 API，向后兼容
     bool ReplaceText(const std::string& placeholder, const std::string& value);
     std::size_t ReplaceText(const std::map<std::string, std::string>& replacements);

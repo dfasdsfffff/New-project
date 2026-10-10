@@ -79,6 +79,20 @@ enum class LineSpacingRule {
     AtLeast   ///< 最小值
 };
 
+/// @brief Word 样式类型
+enum class StyleType {
+    Paragraph, ///< 段落样式，对应 w:style w:type="paragraph"
+    Character  ///< 字符样式，对应 w:style w:type="character"
+};
+
+/// @brief Word 样式基础信息
+struct StyleInfo {
+    std::string styleId; ///< 样式 ID，对应 w:style/@w:styleId
+    std::string name;    ///< 样式显示名称，对应 w:name/@w:val
+    StyleType type = StyleType::Paragraph; ///< 样式类型
+    bool isDefault = false; ///< 是否默认样式，对应 w:style/@w:default
+};
+
 /// @brief 字符级（Run）样式
 ///
 /// 每个字段对应 OOXML w:rPr 下的一个子元素。

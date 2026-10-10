@@ -25,6 +25,10 @@ class MainWindow : public SARibbonMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private slots:
     // 文件菜单
@@ -68,6 +72,8 @@ private:
     void updateTitle();
     void doImport();
     void doExport();
+    bool confirmSaveChanges();
+    bool saveToPath(const QString& path);
 
     // ── 编辑器 ──
     PageView* editor_;
