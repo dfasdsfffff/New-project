@@ -173,6 +173,11 @@ std::vector<std::string> OpenXmlPackage::partNames() const {
 
 std::optional<std::vector<std::uint8_t>> OpenXmlPackage::rawPart(std::string_view name) const {
     const auto key = std::string(name);
+    // XML 树是当前编辑状态的唯一来源，归档中的字节可能尚未刷新。
+    if (const auto it = xmlParts_.find(key); it != xmlParts_.end()) {
+        const auto xml = it->second.toString();
+        return std::vector<std::uint8_t>(xml.begin(), xml.end());
+    }
     if (!archive_.contains(key)) {
         return std::nullopt;
     }

@@ -27,6 +27,18 @@ std::string xPathIndex(std::size_t index) {
     return std::to_string(index + 1);
 }
 
+std::string bodyParagraphXPath(std::size_t index) {
+    return "(/w:document/w:body/w:p)[" + xPathIndex(index) + "]";
+}
+
+// 高层 API 仅索引正文直属段落；底层 XmlPart 索引包含表格内的所有段落。
+std::size_t xmlParagraphIndex(const XmlPart& part, std::size_t index) {
+    if (index >= part.countByXPath("/w:document/w:body/w:p")) {
+        throw WordProcessingException("Paragraph index is out of range");
+    }
+    return part.countByXPath(bodyParagraphXPath(index) + "/preceding::w:p");
+}
+
 // 前置声明
 std::string makeInlineImageRunXml(std::string_view relationshipId, const ImageOptions& options);
 
@@ -328,6 +340,18 @@ std::string paragraphXml(const Paragraph& paragraph) {
     return xml.str();
 }
 
+// 独立 XML 片段必须自行声明其使用的命名空间。
+std::string standaloneParagraphXml(const Paragraph& paragraph) {
+    auto xml = paragraphXml(paragraph);
+    xml.replace(0, 5,
+        "<w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+        "xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" "
+        "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+        "xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">");
+    return xml;
+}
+
 std::string tableXml(const Table& table) {
     std::ostringstream xml;
     xml << "<w:tbl>";
@@ -626,10 +650,13 @@ DocumentModel WordDocument::model() const {
         documentModel.paragraphs.push_back(std::move(paragraph));
     }
 
-    const auto tables = tableCount();
+    // 模型的有序块只包含顶层表格，不能让嵌套表格挤占后续顶层表格的索引。
+    const auto tables = mainDocumentPart().countByXPath("/w:document/w:body/w:tbl");
     documentModel.tables.reserve(tables);
     for (std::size_t tableIndex = 0; tableIndex < tables; ++tableIndex) {
-        documentModel.tables.push_back({table(tableIndex)});
+        const auto path = "(/w:document/w:body/w:tbl)[" + xPathIndex(tableIndex) + "]";
+        const auto globalIndex = mainDocumentPart().countByXPath(path + "/preceding::w:tbl");
+        documentModel.tables.push_back({table(globalIndex)});
     }
 
     // 读取页面尺寸（w:sectPr/w:pgSz），单位为 twips
@@ -710,91 +737,54 @@ Paragraph WordDocument::paragraph(std::size_t index) const {
     return model().paragraphs[index];
 }
 
+// 段落局部编辑直接修改 XML 树，保留其他段落、表格及节属性的原始结构。
 void WordDocument::setParagraph(std::size_t index, const Paragraph& paragraph) {
-    auto documentModel = model();
-    if (index >= documentModel.paragraphs.size()) {
-        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    if (index >= paragraphCount()) {
+        throw WordProcessingException("Paragraph index is out of range");
     }
-    documentModel.paragraphs[index] = paragraph;
-    if (auto* block = paragraphBlockAt(documentModel, index)) {
-        block->paragraph = paragraph;
-    }
-    replaceBody(documentModel);
+    mainDocumentPart().replaceElementXml(bodyParagraphXPath(index), standaloneParagraphXml(paragraph));
 }
 
 void WordDocument::appendParagraph(const Paragraph& paragraph) {
-    auto documentModel = model();
-    documentModel.paragraphs.push_back(paragraph);
-    BodyBlock block;
-    block.type = BodyBlockType::Paragraph;
-    block.paragraph = paragraph;
-    documentModel.bodyBlocks.push_back(std::move(block));
-    replaceBody(documentModel);
+    insertParagraph(paragraphCount(), paragraph);
 }
 
 void WordDocument::insertParagraph(std::size_t index, const Paragraph& paragraph) {
-    auto documentModel = model();
-    if (index > documentModel.paragraphs.size()) {
-        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    const auto count = paragraphCount();
+    if (index > count) {
+        throw WordProcessingException("Paragraph index is out of range");
     }
-    documentModel.paragraphs.insert(documentModel.paragraphs.begin() + static_cast<std::ptrdiff_t>(index), paragraph);
-    BodyBlock block;
-    block.type = BodyBlockType::Paragraph;
-    block.paragraph = paragraph;
-    if (index == documentModel.paragraphs.size() - 1) {
-        documentModel.bodyBlocks.push_back(std::move(block));
+    const auto xml = standaloneParagraphXml(paragraph);
+    if (index < count) {
+        mainDocumentPart().insertElementXmlBefore(bodyParagraphXPath(index), xml);
+    } else if (mainDocumentPart().hasXPath("/w:document/w:body/w:sectPr")) {
+        mainDocumentPart().insertElementXmlBefore("/w:document/w:body/w:sectPr", xml);
     } else {
-        std::size_t currentParagraph = 0;
-        auto insertIt = documentModel.bodyBlocks.end();
-        for (auto it = documentModel.bodyBlocks.begin(); it != documentModel.bodyBlocks.end(); ++it) {
-            if (it->type != BodyBlockType::Paragraph) {
-                continue;
-            }
-            if (currentParagraph == index) {
-                insertIt = it;
-                break;
-            }
-            ++currentParagraph;
-        }
-        documentModel.bodyBlocks.insert(insertIt, std::move(block));
+        mainDocumentPart().appendChildXml("/w:document/w:body", xml);
     }
-    replaceBody(documentModel);
 }
 
 void WordDocument::removeParagraph(std::size_t index) {
-    auto documentModel = model();
-    if (index >= documentModel.paragraphs.size()) {
-        throw WordProcessingException("Paragraph index is out of range: " + std::to_string(index));
+    if (index >= paragraphCount()) {
+        throw WordProcessingException("Paragraph index is out of range");
     }
-    documentModel.paragraphs.erase(documentModel.paragraphs.begin() + static_cast<std::ptrdiff_t>(index));
-    std::size_t currentParagraph = 0;
-    for (auto it = documentModel.bodyBlocks.begin(); it != documentModel.bodyBlocks.end(); ++it) {
-        if (it->type != BodyBlockType::Paragraph) {
-            continue;
-        }
-        if (currentParagraph == index) {
-            documentModel.bodyBlocks.erase(it);
-            break;
-        }
-        ++currentParagraph;
-    }
-    replaceBody(documentModel);
+    mainDocumentPart().removeElement(bodyParagraphXPath(index));
 }
 
 void WordDocument::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
-    mainDocumentPart().setRunStyle(paragraphIndex, runIndex, style);
+    mainDocumentPart().setRunStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), runIndex, style);
 }
 
 TextStyle WordDocument::runStyle(std::size_t paragraphIndex, std::size_t runIndex) const {
-    return mainDocumentPart().runStyle(paragraphIndex, runIndex);
+    return mainDocumentPart().runStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), runIndex);
 }
 
 void WordDocument::setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style) {
-    mainDocumentPart().setParagraphStyle(paragraphIndex, style);
+    mainDocumentPart().setParagraphStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), style);
 }
 
 ParagraphStyle WordDocument::paragraphStyle(std::size_t paragraphIndex) const {
-    return mainDocumentPart().paragraphStyle(paragraphIndex);
+    return mainDocumentPart().paragraphStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex));
 }
 
 std::vector<StyleInfo> WordDocument::paragraphStyles() const {

@@ -1131,6 +1131,56 @@ void XmlPart::appendChildXml(std::string_view parentXPath, std::string_view chil
     child.release();
 }
 
+namespace {
+// 仅允许修改普通子元素，避免属性、文档根及无匹配 XPath 破坏树结构。
+xmlNodePtr editableElement(xmlXPathObjectPtr result) {
+    if (!result->nodesetval || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("XPath did not match an element");
+    }
+    auto* node = result->nodesetval->nodeTab[0];
+    if (node->type != XML_ELEMENT_NODE || !node->parent ||
+        node->parent->type != XML_ELEMENT_NODE) {
+        throw WordProcessingException("XPath must select a non-root element");
+    }
+    return node;
+}
+}
+
+void XmlPart::replaceElementXml(std::string_view xpath, std::string_view elementXml) {
+    const auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(xpath), xmlXPathFreeObject);
+    auto* node = editableElement(result.get());
+    auto replacement = std::unique_ptr<xmlNode, decltype(&xmlFreeNode)>(
+        copyXmlFragmentRoot(elementXml, impl_->doc), xmlFreeNode);
+    // 先解析并复制片段，失败时原节点保持不变。
+    if (!xmlAddPrevSibling(node, replacement.get())) {
+        throw WordProcessingException("Unable to insert replacement element");
+    }
+    replacement.release();
+    xmlUnlinkNode(node);
+    xmlFreeNode(node);
+}
+
+void XmlPart::insertElementXmlBefore(std::string_view xpath, std::string_view elementXml) {
+    const auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(xpath), xmlXPathFreeObject);
+    auto* node = editableElement(result.get());
+    auto inserted = std::unique_ptr<xmlNode, decltype(&xmlFreeNode)>(
+        copyXmlFragmentRoot(elementXml, impl_->doc), xmlFreeNode);
+    if (!xmlAddPrevSibling(node, inserted.get())) {
+        throw WordProcessingException("Unable to insert XML element");
+    }
+    inserted.release();
+}
+
+void XmlPart::removeElement(std::string_view xpath) {
+    const auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(xpath), xmlXPathFreeObject);
+    auto* node = editableElement(result.get());
+    xmlUnlinkNode(node);
+    xmlFreeNode(node);
+}
+
 std::size_t XmlPart::countByXPath(std::string_view xpath) const {
     auto* result = impl_->eval(xpath);
     const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);

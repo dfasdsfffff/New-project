@@ -71,8 +71,10 @@ public:
     [[nodiscard]] DocumentModel model() const;
     /// @brief 用新模型替换文档主体内容（段落、表格、图像）
     void replaceBody(const DocumentModel& model);
+    /// @brief 段落及样式 API 的索引仅包含正文直属段落，不含表格内段落
     [[nodiscard]] std::size_t paragraphCount() const;
     [[nodiscard]] Paragraph paragraph(std::size_t index) const;
+    /// @brief 替换指定段落；其他正文节点和节属性保持原样，目标段落按模型重建
     void setParagraph(std::size_t index, const Paragraph& paragraph);
     void appendParagraph(const Paragraph& paragraph);
     void insertParagraph(std::size_t index, const Paragraph& paragraph);
@@ -146,7 +148,7 @@ public:
     [[nodiscard]] std::optional<XmlPart*> part(std::string_view packagePath);
     /// @brief 获取包中所有部件名称列表
     [[nodiscard]] std::vector<std::string> partNames() const;
-    /// @brief 按包路径获取任意部件（含二进制）的原始字节
+    /// @brief 按包路径获取部件字节；XML 返回当前编辑状态的序列化，二进制保持原样
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> rawPart(std::string_view packagePath) const;
 
 private:

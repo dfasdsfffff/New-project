@@ -184,8 +184,9 @@ struct PageSetup {
 
 /// @brief 文档模型 —— 编辑器和模板模块使用的核心数据结构
 ///
-/// 包含段落实体和表格实体。注意：paragraphs 和 tables 是分离存储的，
-/// 顺序信息在读/写往返时可能丢失。（v1 已知限制）
+/// bodyBlocks 非空时是 replaceBody 的唯一正文来源，保留顶层段落/表格顺序。
+/// paragraphs 和 tables 为顶层内容的便捷快照，修改快照不会同步 bodyBlocks；
+/// 仅当 bodyBlocks 为空时，replaceBody 才依次写入 paragraphs 和 tables。
 struct DocumentModel {
     std::vector<BodyBlock> bodyBlocks; ///< 有序正文块，优先用于保持段落/表格顺序
     std::vector<Paragraph> paragraphs;

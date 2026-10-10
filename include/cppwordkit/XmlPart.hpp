@@ -74,6 +74,12 @@ public:
     void setTextByXPath(std::string_view xpath, std::string_view value);
     /// @brief 向指定 XPath 节点的子节点列表末尾追加 XML 子元素
     void appendChildXml(std::string_view parentXPath, std::string_view childXml);
+    /// @brief 替换首个匹配元素；解析成功后才修改原树，不允许替换根节点
+    void replaceElementXml(std::string_view xpath, std::string_view elementXml);
+    /// @brief 在首个匹配元素之前插入元素，不允许在根节点前插入
+    void insertElementXmlBefore(std::string_view xpath, std::string_view elementXml);
+    /// @brief 删除首个匹配元素，不允许删除根节点
+    void removeElement(std::string_view xpath);
     /// @brief XPath 节点计数
     [[nodiscard]] std::size_t countByXPath(std::string_view xpath) const;
     /// @brief 通过 XPath 批量设置多个节点的文本内容
