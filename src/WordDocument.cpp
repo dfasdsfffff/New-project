@@ -518,7 +518,7 @@ void WordDocument::saveAs(const Path& path, const SaveOptions& options) {
     if (std::filesystem::exists(path) && !options.overwrite) {
         throw WordException("Target file already exists: " + path.string());
     }
-    impl_->package.saveAs(path);
+    impl_->package.saveAs(path, options.overwrite);
     impl_->sourcePath = path;
     impl_->open = true;
 }

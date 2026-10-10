@@ -42,6 +42,14 @@ int main(int argc, char** argv)
     try {
         QTemporaryDir directory;
         require(directory.isValid(), "temporary directory unavailable");
+        // 独立控制器验证中文及非本地代码页字符的路径往返。
+        DocumentController unicodeController;
+        require(unicodeController.newDocument(), "unicode fixture creation failed");
+        const auto unicodePath = directory.filePath(QString::fromUtf8("中文报告-\xF0\x9F\x93\x84.docx"));
+        require(unicodeController.saveDocumentAs(unicodePath), "unicode path save failed");
+        require(QFile::exists(unicodePath), "unicode save used wrong filename");
+        require(unicodeController.openDocument(unicodePath), "unicode path open failed");
+        require(unicodeController.saveDocument(), "unicode path overwrite failed");
         MainWindow window;
         auto* controller = window.findChild<DocumentController*>();
         auto* editor = window.findChild<PageView*>();
@@ -63,8 +71,22 @@ int main(int argc, char** argv)
         answerMessage(QMessageBox::Save);
         require(window.close(), "successful save must allow close");
         require(!editor->document()->isModified(), "close-save did not reset save point");
-        auto saved = cppwordkit::WordDocument::open(cppwordkit::Path(path.toStdWString()));
+        auto saved = cppwordkit::WordDocument::open(cppwordkit::Path(path.toStdU16String()));
         require(saved.text().find("second") != std::string::npos, "saved content missing");
+
+        // 图片资源缺失时必须阻止保存，不能静默丢图并标记保存成功。
+        QFile originalFile(path);
+        require(originalFile.open(QIODevice::ReadOnly), "cannot read original document");
+        const auto originalBytes = originalFile.readAll();
+        originalFile.close();
+        editor->textCursor().insertImage("missing-image-resource");
+        answerMessage(QMessageBox::Ok);
+        QMetaObject::invokeMethod(&window, "onSaveDocument");
+        require(controller->isModified(), "missing image save cleared modification flag");
+        require(originalFile.open(QIODevice::ReadOnly), "cannot reread original document");
+        require(originalFile.readAll() == originalBytes, "missing image save changed disk content");
+        originalFile.close();
+        editor->undo();
 
         // 目标变成目录时保存必须失败，编辑内容和修改标记必须保留。
         require(QFile::remove(path) && QDir().mkdir(path), "failed-save fixture unavailable");

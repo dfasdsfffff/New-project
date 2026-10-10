@@ -37,7 +37,8 @@ bool DocumentController::openDocument(const QString& path)
 {
     try {
         // 从文件打开 Word 文档，捕获 PackageException 以给出更友好的错误提示
-        auto doc = cppwordkit::WordDocument::open(path.toStdString());
+        // UTF-16 路径由 filesystem 转为平台路径，避免 Windows 中文文件名乱码。
+        auto doc = cppwordkit::WordDocument::open(cppwordkit::Path(path.toStdU16String()));
         document_ = std::make_unique<cppwordkit::WordDocument>(std::move(doc));
         currentPath_ = path;
         modified_ = false;
@@ -88,7 +89,7 @@ bool DocumentController::saveDocumentAs(const QString& path)
 
     try {
         // 另存为新路径后，更新当前路径为新的保存位置
-        document_->saveAs(path.toStdString());
+        document_->saveAs(cppwordkit::Path(path.toStdU16String()));
         currentPath_ = path;
         modified_ = false;
 

@@ -56,6 +56,8 @@ public:
     /// @brief 原位保存（必须先通过 open() 或 saveAs() 设置路径）
     void save();
     /// @brief 另存为指定路径
+    /// @details 完整写入同目录暂存文件后提交替换；提交失败保留原文件和当前路径。
+    /// 暂存需要额外磁盘空间；不保证断电持久性或保留原文件的所有文件系统元数据。
     void saveAs(const Path& path, const SaveOptions& options = {});
 
     [[nodiscard]] bool isOpen() const noexcept;

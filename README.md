@@ -142,6 +142,28 @@ int main() {
 RichText, InlineImage template values, sub-documents, and media replacement are
 reserved for a later CppWordTpl phase.
 
+## Current scope and limitations
+
+The project is a basic DOCX toolkit and editor, not a complete Word replacement.
+Core supports paragraphs, basic run/paragraph formatting, simple text tables,
+inline images and page settings. The editor maps these features to Qt; advanced
+OOXML structures may lose information when the body is rebuilt during editing.
+The planned independent `editorcore` command layer is not implemented yet.
+
+Saving writes a complete staging file beside the destination before replacing
+it. Write/close/commit errors are reported, existing files survive failed
+replacement, and `overwrite=false` is enforced at commit time. This needs space
+for both files, does not guarantee power-loss durability, and may not preserve
+all filesystem metadata. Abnormal process termination may leave a
+`.cppwordkit-save-*` staging directory. Normal failures clean it up.
+Windows Unicode document paths are supported by the Qt controller. Missing or
+failed image resources stop editor saving instead of silently dropping images.
+
+`cppwordkit_save_tests` covers file replacement, no-overwrite, failed destinations,
+Unicode paths and staging cleanup (plus locked targets on Windows).
+Enable `CPPWORDKIT_BUILD_WORD_EDITOR` and `CPPWORDKIT_BUILD_TESTS` to also run
+the offscreen Qt lifecycle and Unicode-path tests.
+
 ## Test notes on Windows
 
 When building with the local MinGW dependency folders, tests need the libxml2,
