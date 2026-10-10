@@ -18,6 +18,8 @@
 
 namespace {
 
+constexpr int BorderColorProperty = QTextFormat::UserProperty + 102;
+
 QString toTitleCase(QString text)
 {
     bool nextWord = true;
@@ -107,6 +109,11 @@ void PageView::setDocumentMargins(qreal left, qreal top, qreal right, qreal bott
     updateLayout();
     viewport()->update();
 }
+
+qreal PageView::pageMarginLeft() const   { return pageMarginLeft_; }
+qreal PageView::pageMarginTop() const    { return pageMarginTop_; }
+qreal PageView::pageMarginRight() const  { return pageMarginRight_; }
+qreal PageView::pageMarginBottom() const { return pageMarginBottom_; }
 
 void PageView::setZoom(qreal zoom)
 {
@@ -568,6 +575,8 @@ void PageView::paintEvent(QPaintEvent* /*event*/)
         // 文档坐标 Y 轴：第 i 页起始于 y=i*pageHeight
         painter.translate(0, -i * pageSize_.height());
         doc_->documentLayout()->draw(&painter, ctx);
+        // 在文档内容之上绘制字符边框（每行整体绘制，不跨行）
+        drawCharBorders(painter);
         painter.restore();
 
         // 页面边框
@@ -589,6 +598,71 @@ void PageView::drawCursor(QPainter& painter)
     painter.setPen(QPen(Qt::black, 1.5));
     painter.drawLine(QPointF(sr.x(), sr.y()),
                      QPointF(sr.x(), sr.y() + sr.height()));
+}
+
+/**
+ * 绘制字符边框：在每行中查找设置了 BorderColorProperty 的连续文本段，
+ * 以行高为高度整体绘制矩形边框，不跨行拆分。
+ */
+void PageView::drawCharBorders(QPainter& painter)
+{
+    if (!doc_) return;
+
+    QAbstractTextDocumentLayout* docLayout = doc_->documentLayout();
+
+    for (QTextBlock block = doc_->begin(); block.isValid(); block = block.next()) {
+        QTextLayout* layout = block.layout();
+        if (!layout) continue;
+
+        QRectF blockRect = docLayout->blockBoundingRect(block);
+        int blockPos = block.position();
+
+        for (int lineIdx = 0; lineIdx < layout->lineCount(); ++lineIdx) {
+            QTextLine line = layout->lineAt(lineIdx);
+            if (!line.isValid()) continue;
+
+            int lineStart = line.textStart();
+            int lineEnd = lineStart + line.textLength();
+
+            // 收集此行上有边框属性的连续文本段
+            struct BorderSeg { int start; int end; };
+            std::vector<BorderSeg> segs;
+
+            for (auto it = block.begin(); !it.atEnd(); ++it) {
+                QTextFragment frag = it.fragment();
+                if (!frag.isValid()) continue;
+
+                int fragStart = frag.position() - blockPos;
+                int fragEnd = fragStart + frag.length();
+
+                int overlapStart = std::max(fragStart, lineStart);
+                int overlapEnd = std::min(fragEnd, lineEnd);
+                if (overlapStart >= overlapEnd) continue;
+
+                QVariant prop = frag.charFormat().property(BorderColorProperty);
+                if (!prop.isValid() || prop.toString().isEmpty()) continue;
+
+                // 与前一段相邻则合并，否则新建段
+                if (!segs.empty() && segs.back().end == overlapStart) {
+                    segs.back().end = overlapEnd;
+                } else {
+                    segs.push_back({overlapStart, overlapEnd});
+                }
+            }
+
+            // 为每个连续段绘制矩形边框
+            for (const auto& seg : segs) {
+                qreal x1 = blockRect.x() + line.cursorToX(seg.start);
+                qreal x2 = blockRect.x() + line.cursorToX(seg.end);
+                qreal y = blockRect.y() + line.y();
+                qreal h = line.height();
+
+                painter.setPen(QPen(Qt::black, 1));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRect(QRectF(x1 - 1, y, x2 - x1 + 2, h));
+            }
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

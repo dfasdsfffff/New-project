@@ -18,6 +18,15 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <random>
+#include <system_error>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace cppwordkit {
 //! @namespace cppwordkit 顶层命名空间，包含 ZIP、XML、OOXML 文档操作的所有类型
@@ -73,13 +82,73 @@ std::vector<std::uint8_t> readFile(const Path& path) {
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
-// 将字节数组写入文件
-void writeFile(const Path& path, const std::vector<std::uint8_t>& data) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) {
-        throw PackageException("Unable to write zip file: " + path.string());
+// 在目标目录中独占创建暂存目录，确保提交时不跨文件系统。
+class PendingSave {
+public:
+    explicit PendingSave(const Path& target) {
+        const auto parent = target.has_parent_path() ? target.parent_path() : Path(".");
+        std::random_device random;
+        for (int attempt = 0; attempt < 32; ++attempt) {
+            const auto candidate = parent / (".cppwordkit-save-" +
+                std::to_string(random()) + "-" + std::to_string(random()));
+            std::error_code error;
+            if (std::filesystem::create_directory(candidate, error)) {
+                directory_ = candidate;
+                return;
+            }
+            if (error) throw PackageException("Unable to create save staging directory: " + error.message());
+        }
+        throw PackageException("Unable to allocate a unique save staging directory");
     }
+
+    ~PendingSave() {
+        // 只移除本次创建的固定文件和空目录，不递归删除未知内容。
+        std::error_code ignored;
+        std::filesystem::remove(file(), ignored);
+        std::filesystem::remove(directory_, ignored);
+    }
+    PendingSave(const PendingSave&) = delete;
+    PendingSave& operator=(const PendingSave&) = delete;
+    Path file() const { return directory_ / "document.tmp"; }
+private:
+    Path directory_;
+};
+
+// 完整写入并关闭暂存文件后再提交，失败时原文档保持不变。
+void writeFile(const Path& path, const std::vector<std::uint8_t>& data, bool overwrite) {
+    PendingSave pending(path);
+    const auto temporary = pending.file();
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    if (!output) throw PackageException("Unable to open staging file");
     output.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    output.flush();
+    if (!output) throw PackageException("Unable to write complete zip file");
+    output.close();
+    if (!output) throw PackageException("Unable to close completed zip file");
+
+#ifdef _WIN32
+    // 不启用跨卷复制；目标被占用或只读时由系统拒绝替换。
+    const DWORD flags = MOVEFILE_WRITE_THROUGH | (overwrite ? MOVEFILE_REPLACE_EXISTING : 0);
+    if (!MoveFileExW(temporary.c_str(), path.c_str(), flags)) {
+        const std::error_code error(static_cast<int>(GetLastError()), std::system_category());
+        throw PackageException("Unable to commit zip file: " + error.message());
+    }
+#else
+    std::error_code error;
+    if (overwrite) {
+        // 保留既有普通文件的权限。
+        const auto status = std::filesystem::status(path, error);
+        if (!error && std::filesystem::is_regular_file(status)) {
+            std::filesystem::permissions(temporary, status.permissions());
+        }
+        error.clear();
+        std::filesystem::rename(temporary, path, error);
+    } else {
+        // 硬链接创建是不可覆盖的原子操作，避免 exists 检查后的竞争窗口。
+        std::filesystem::create_hard_link(temporary, path, error);
+    }
+    if (error) throw PackageException("Unable to commit zip file: " + error.message());
+#endif
 }
 
 // 解压 Deflate 数据（raw 模式，无 zlib 头部）
@@ -229,7 +298,7 @@ ZipArchive ZipArchive::read(const Path& path) {
     return archive;
 }
 
-void ZipArchive::write(const Path& path) const {
+void ZipArchive::write(const Path& path, bool overwrite) const {
     // 生成 ZIP 文件的内存结构：先写所有 Local File Header + 数据，再写 Central Directory，最后写 EOCD
     struct CentralRecord {
         std::string name;
@@ -302,7 +371,7 @@ void ZipArchive::write(const Path& path) const {
     writeU32(output, centralOffset);
     writeU16(output, 0);
 
-    writeFile(path, output);
+    writeFile(path, output, overwrite);
 }
 
 bool ZipArchive::contains(const std::string& name) const {

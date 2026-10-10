@@ -22,7 +22,7 @@ public:
 
     static ZipArchive read(const Path& path);
 
-    void write(const Path& path) const;
+    void write(const Path& path, bool overwrite = true) const;
 
     [[nodiscard]] bool contains(const std::string& name) const;
     [[nodiscard]] std::string text(const std::string& name) const;

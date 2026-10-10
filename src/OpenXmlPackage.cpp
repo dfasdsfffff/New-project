@@ -127,12 +127,12 @@ OpenXmlPackage OpenXmlPackage::createBlankDocument() {
 }
 
 //! 保存 OOXML 包：先将内存中修改过的 XML 部件刷回 ZIP 归档，再写入文件
-void OpenXmlPackage::saveAs(const Path& path) const {
+void OpenXmlPackage::saveAs(const Path& path, bool overwrite) const {
     auto archive = archive_;
     for (const auto& [name, part] : xmlParts_) {
         archive.setText(name, part.toString());
     }
-    archive.write(path);
+    archive.write(path, overwrite);
 }
 
 bool OpenXmlPackage::hasPart(std::string_view name) const {

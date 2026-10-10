@@ -54,6 +54,10 @@ public:
 
     /// @brief 设置文档边距（单位：磅）
     void setDocumentMargins(qreal left, qreal top, qreal right, qreal bottom);
+    qreal pageMarginLeft() const;
+    qreal pageMarginTop() const;
+    qreal pageMarginRight() const;
+    qreal pageMarginBottom() const;
 
     /// @brief 设置缩放比例（1.0 = 100%）
     void setZoom(qreal zoom);
@@ -143,6 +147,8 @@ private:
     QRectF cursorScreenRect() const;
     /// 绘制文本光标
     void drawCursor(QPainter& painter);
+    /// 在每行有边框属性的文本周围绘制整体矩形边框
+    void drawCharBorders(QPainter& painter);
     /// 启动/停止光标闪烁定时器
     void startBlinking();
     void stopBlinking();

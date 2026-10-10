@@ -6,12 +6,21 @@ project(CppWordKit
     LANGUAGES CXX
 )
 
+# 源码包含中文注释和界面文本，MSVC 必须按 UTF-8 解码。
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 option(CPPWORDKIT_BUILD_TESTS "Build CppWordKit tests" ON)
 option(CPPWORDKIT_BUILD_EXAMPLES "Build CppWordKit examples" ON)
 option(CPPWORDKIT_BUILD_WORD_EDITOR "Build Qt6 Word Editor application" OFF)
-option(CPPWORDKIT_USE_LOCAL_DEPS "Use locally downloaded MinGW dependencies" OFF)
+option(CPPWORDKIT_USE_LOCAL_DEPS "Use local dependencies matching the active compiler" OFF)
 
-set(CPPWORDKIT_LOCAL_LIBXML2_ROOT "D:/libraries/MinGW/libxml2-v2.12.10"
+# 第三方库根目录
+set(CPPWORDKIT_3THLIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3thlib"
+    CACHE PATH "Third-party libraries root")
+
+set(CPPWORDKIT_LOCAL_LIBXML2_ROOT "${CPPWORDKIT_3THLIB_DIR}/libxml2-v2.12.10"
     CACHE PATH "Local libxml2 installation root")
 set(CPPWORDKIT_LOCAL_ZLIB_ROOT "D:/libraries/MinGW/zlib"
     CACHE PATH "Local zlib installation root")

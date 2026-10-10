@@ -123,6 +123,54 @@ std::string lineRuleToXml(LineSpacingRule rule) {
     return "auto";
 }
 
+bool styleDefaultFromXml(std::string_view value) {
+    return value == "1" || value == "true" || value == "on";
+}
+
+std::string styleTypeToXml(StyleType type) {
+    switch (type) {
+    case StyleType::Paragraph:
+        return "paragraph";
+    case StyleType::Character:
+        return "character";
+    }
+    return "paragraph";
+}
+
+std::vector<StyleInfo> readStylesByType(const XmlPart& stylesPart, StyleType type) {
+    const auto typeName = styleTypeToXml(type);
+    const auto styleSetPath = "//w:style[@w:type='" + typeName + "']";
+    const auto styleCount = stylesPart.countByXPath(styleSetPath);
+
+    std::vector<StyleInfo> styles;
+    styles.reserve(styleCount);
+
+    for (std::size_t styleIndex = 0; styleIndex < styleCount; ++styleIndex) {
+        const auto stylePath = "(" + styleSetPath + ")[" + xPathIndex(styleIndex) + "]";
+        StyleInfo style;
+        style.type = type;
+
+        const auto ids = stylesPart.textsByXPath(stylePath + "/@w:styleId");
+        if (!ids.empty()) {
+            style.styleId = ids.front();
+        }
+
+        const auto names = stylesPart.textsByXPath(stylePath + "/w:name/@w:val");
+        if (!names.empty()) {
+            style.name = names.front();
+        }
+
+        const auto defaults = stylesPart.textsByXPath(stylePath + "/@w:default");
+        if (!defaults.empty()) {
+            style.isDefault = styleDefaultFromXml(defaults.front());
+        }
+
+        styles.push_back(std::move(style));
+    }
+
+    return styles;
+}
+
 // 构建 w:rPr（run 属性）的 XML 片段，参数不生效时不输出任何内容
 void appendRunProperties(std::ostringstream& xml, const TextStyle& style) {
     if (!style.fontFamily &&
@@ -470,7 +518,7 @@ void WordDocument::saveAs(const Path& path, const SaveOptions& options) {
     if (std::filesystem::exists(path) && !options.overwrite) {
         throw WordException("Target file already exists: " + path.string());
     }
-    impl_->package.saveAs(path);
+    impl_->package.saveAs(path, options.overwrite);
     impl_->sourcePath = path;
     impl_->open = true;
 }
@@ -747,6 +795,22 @@ void WordDocument::setParagraphStyle(std::size_t paragraphIndex, const Paragraph
 
 ParagraphStyle WordDocument::paragraphStyle(std::size_t paragraphIndex) const {
     return mainDocumentPart().paragraphStyle(paragraphIndex);
+}
+
+std::vector<StyleInfo> WordDocument::paragraphStyles() const {
+    auto stylesPart = const_cast<WordDocument*>(this)->part("word/styles.xml");
+    if (!stylesPart) {
+        return {};
+    }
+    return readStylesByType(**stylesPart, StyleType::Paragraph);
+}
+
+std::vector<StyleInfo> WordDocument::characterStyles() const {
+    auto stylesPart = const_cast<WordDocument*>(this)->part("word/styles.xml");
+    if (!stylesPart) {
+        return {};
+    }
+    return readStylesByType(**stylesPart, StyleType::Character);
 }
 
 //! 用值替换文档中的占位符（自动补全 {{}} 格式），支持跨 w:t 节点的占位符

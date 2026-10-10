@@ -10,6 +10,7 @@
 #include <QPen>
 #include <QTemporaryFile>
 #include <QDir>
+#include <stdexcept>
 
 namespace {
 
@@ -98,7 +99,6 @@ QTextCharFormat QtDocumentMapper::mapTextStyle(const cppwordkit::TextStyle& styl
     if (style.borderColorHex) {
         const auto borderColor = QColor(QString::fromStdString("#" + *style.borderColorHex));
         fmt.setProperty(BorderColorProperty, borderColor.name().mid(1));
-        fmt.setTextOutline(QPen(borderColor, 0.6));
     }
     if (style.enclosedCircle) {
         fmt.setProperty(EnclosedCircleProperty, *style.enclosedCircle);
@@ -342,41 +342,32 @@ cppwordkit::DocumentModel QtDocumentMapper::exportModel(const QTextDocument& doc
                     QString resourceName = imgFmt.name();
 
                     QByteArray imgData = imageStore_.imageData(resourceName);
-                    if (!imgData.isEmpty()) {
-                        // 将图片数据写入临时文件，通过 cppwordkit 的 addImage 导入
-                        QTemporaryFile* tempFile = new QTemporaryFile(
-                            QDir::temp().filePath("cppwordkit_img_XXXXXX.png"));
-                        tempFile->setAutoRemove(true);
-                        if (tempFile->open()) {
-                            tempFile->write(imgData);
-                            tempFile->close();
-                        }
-
-                        try {
-                            auto imageId = wordDoc.addImage(
-                                tempFile->fileName().toStdString());
-
-                            // EMU 换算：若 Qt 端记录了宽高则转换为 EMU，否则使用默认值
-                            cppwordkit::ImageOptions opts;
-                            if (imgFmt.width() > 0) {
-                                opts.widthEmu = static_cast<std::int64_t>(imgFmt.width() * 9144.0);
-                            }
-                            if (imgFmt.height() > 0) {
-                                opts.heightEmu = static_cast<std::int64_t>(imgFmt.height() * 9144.0);
-                            }
-                            opts.description = imgFmt.name().toStdString();
-
-                            cppwordkit::InlineImage inlineImg;
-                            inlineImg.image = imageId;
-                            inlineImg.options = opts;
-
-                            currentRun.images.push_back(std::move(inlineImg));
-                        } catch (const std::exception&) {
-                            // 图片添加失败时静默跳过
-                        }
-
-                        delete tempFile;
+                    if (imgData.isEmpty()) {
+                        // 资源缺失时中止保存，不能生成一份悄悄丢图的文档。
+                        throw std::runtime_error("Image resource is missing: " + resourceName.toStdString());
                     }
+                    // 临时文件由栈对象管理；添加图片失败时异常向上传递。
+                    QTemporaryFile tempFile(QDir::temp().filePath("cppwordkit_img_XXXXXX.png"));
+                    if (!tempFile.open() || tempFile.write(imgData) != imgData.size() || !tempFile.flush()) {
+                        throw std::runtime_error("Unable to stage image data for saving");
+                    }
+                    tempFile.close();
+                    auto imageId = wordDoc.addImage(cppwordkit::Path(tempFile.fileName().toStdU16String()));
+
+                    // EMU 换算：若 Qt 端记录了宽高则转换为 EMU，否则使用默认值。
+                    cppwordkit::ImageOptions opts;
+                    if (imgFmt.width() > 0) {
+                        opts.widthEmu = static_cast<std::int64_t>(imgFmt.width() * 9144.0);
+                    }
+                    if (imgFmt.height() > 0) {
+                        opts.heightEmu = static_cast<std::int64_t>(imgFmt.height() * 9144.0);
+                    }
+                    opts.description = imgFmt.name().toStdString();
+
+                    cppwordkit::InlineImage inlineImg;
+                    inlineImg.image = imageId;
+                    inlineImg.options = opts;
+                    currentRun.images.push_back(std::move(inlineImg));
                     continue;
                 }
 

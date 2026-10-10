@@ -56,6 +56,8 @@ public:
     /// @brief 原位保存（必须先通过 open() 或 saveAs() 设置路径）
     void save();
     /// @brief 另存为指定路径
+    /// @details 完整写入同目录暂存文件后提交替换；提交失败保留原文件和当前路径。
+    /// 暂存需要额外磁盘空间；不保证断电持久性或保留原文件的所有文件系统元数据。
     void saveAs(const Path& path, const SaveOptions& options = {});
 
     [[nodiscard]] bool isOpen() const noexcept;
@@ -79,6 +81,11 @@ public:
     [[nodiscard]] TextStyle runStyle(std::size_t paragraphIndex, std::size_t runIndex) const;
     void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);
     [[nodiscard]] ParagraphStyle paragraphStyle(std::size_t paragraphIndex) const;
+
+    /// @brief 枚举 word/styles.xml 中的段落样式
+    [[nodiscard]] std::vector<StyleInfo> paragraphStyles() const;
+    /// @brief 枚举 word/styles.xml 中的字符样式
+    [[nodiscard]] std::vector<StyleInfo> characterStyles() const;
 
     // 旧版 API，向后兼容
     bool ReplaceText(const std::string& placeholder, const std::string& value);

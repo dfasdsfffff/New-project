@@ -1,27 +1,28 @@
-//! @file FormatToolbar.hpp 格式工具栏，提供富文本格式编辑控件
+//! @file FormatToolbar.hpp 功能区格式工具栏
 
 #pragma once
 
-#include <QToolBar>
+#include <QWidget>
+#include <QTabBar>
+#include <QStackedWidget>
 #include <QFontComboBox>
 #include <QComboBox>
+#include <QToolButton>
 #include <QAction>
-#include <QColor>
 #include <QMenu>
-#include <QTextCharFormat>
-#include <QTextBlockFormat>
 #include <QLabel>
 
 class PageView;
+class RibbonGroup;
 
 /**
- * @brief 格式工具栏
+ * @brief 功能区样式格式工具栏
  *
- * 提供字体选择、字号选择、粗体/斜体/下划线/删除线、文字颜色、背景颜色、
- * 段落对齐等富文本格式控制功能。
- * 监听编辑器的光标位置变化以实时同步当前格式状态。
+ * 采用 Ribbon 设计，将编辑功能分为"开始"和"页面"两个选项卡。
+ * 每个选项卡内按功能分组（字体、段落、页面设置）。
+ * 不再继承 QToolBar，而是作为普通 QWidget 嵌入主窗口布局。
  */
-class FormatToolbar : public QToolBar {
+class FormatToolbar : public QWidget {
     Q_OBJECT
 public:
     explicit FormatToolbar(QWidget* parent = nullptr);
@@ -29,47 +30,61 @@ public:
     /// 关联到目标编辑器，设置信号连接并初始化格式状态
     void setEditor(PageView* editor);
 
+signals:
+    /// 用户点击"页面设置"按钮时发出，由 MainWindow 处理
+    void pageSetupRequested();
+
 private slots:
-    void onFontFamilyChanged(const QString& family);     ///< 字体选择变化时应用
-    void onFontSizeChanged(const QString& sizeText);     ///< 字号选择变化时应用
-    void onBoldToggled(bool checked);                    ///< 粗体开关
-    void onItalicToggled(bool checked);                  ///< 斜体开关
-    void onUnderlineToggled(bool checked);               ///< 下划线开关
-    void onStrikeToggled(bool checked);                  ///< 删除线开关
-    void onTextColorClicked();                           ///< 文字颜色选择
-    void onBackgroundColorClicked();                     ///< 背景颜色选择
-    void onHighlightSelected(QAction* action);            ///< 高亮颜色选择
-    void onBorderToggled(bool checked);                   ///< 字符边框开关
-    void onEnclosedCircleToggled(bool checked);           ///< 带圈字符开关
-    void onChangeCaseSelected(QAction* action);           ///< 大小写转换
-    void onAlignmentChanged(QAction* action);            ///< 段落对齐切换
+    void onFontFamilyChanged(const QString& family);
+    void onFontSizeChanged(const QString& sizeText);
+    void onBoldToggled(bool checked);
+    void onItalicToggled(bool checked);
+    void onUnderlineToggled(bool checked);
+    void onStrikeToggled(bool checked);
+    void onTextColorClicked();
+    void onBackgroundColorClicked();
+    void onHighlightSelected(QAction* action);
+    void onBorderToggled(bool checked);
+    void onEnclosedCircleToggled(bool checked);
+    void onChangeCaseSelected(QAction* action);
+    void onAlignmentChanged(QAction* action);
     /// 响应编辑器光标/格式变化，同步工具栏状态
     void updateStateFromEditor();
 
 private:
-    void setupUi();          // 创建工具栏控件布局
-    void setupConnections(); // 连接控件信号到槽函数
+    void setupUi();
+    void setupConnections();
+    void setupFontGroup(RibbonGroup* group);
+    void setupParagraphGroup(RibbonGroup* group);
+    void setupPageGroup(RibbonGroup* group);
 
-    QFontComboBox* fontCombo_;           ///< 字体选择下拉框
-    QComboBox* fontSizeCombo_;           ///< 字号选择下拉框
-    QAction* boldAction_;                ///< 粗体按钮
-    QAction* italicAction_;              ///< 斜体按钮
-    QAction* underlineAction_;           ///< 下划线按钮
-    QAction* strikeAction_;              ///< 删除线按钮
-    QAction* textColorAction_;           ///< 文字颜色按钮
-    QAction* backgroundColorAction_;     ///< 背景颜色按钮
-    QAction* highlightAction_;           ///< 高亮颜色按钮
-    QAction* borderAction_;              ///< 字符边框按钮
-    QAction* enclosedCircleAction_;      ///< 带圈字符按钮
-    QAction* upperCaseAction_;           ///< 转为大写
-    QAction* lowerCaseAction_;           ///< 转为小写
-    QAction* titleCaseAction_;           ///< 首字母大写
-    QMenu* highlightMenu_;               ///< 高亮颜色菜单
-    QMenu* changeCaseMenu_;              ///< 大小写菜单
-    QAction* alignLeftAction_;           ///< 左对齐按钮
-    QAction* alignCenterAction_;         ///< 居中对齐按钮
-    QAction* alignRightAction_;          ///< 右对齐按钮
-    QAction* alignJustifyAction_;        ///< 两端对齐按钮
+    // 选项卡
+    QTabBar* tabBar_;
+    QStackedWidget* tabPages_;
 
-    PageView* editor_ = nullptr;          ///< 当前关联的分页编辑器
+    // 字体控件
+    QFontComboBox* fontCombo_;
+    QComboBox* fontSizeCombo_;
+    QAction* boldAction_;
+    QAction* italicAction_;
+    QAction* underlineAction_;
+    QAction* strikeAction_;
+    QAction* textColorAction_;
+    QAction* backgroundColorAction_;
+    QAction* highlightAction_;
+    QAction* borderAction_;
+    QAction* enclosedCircleAction_;
+    QAction* upperCaseAction_;
+    QAction* lowerCaseAction_;
+    QAction* titleCaseAction_;
+    QMenu* highlightMenu_;
+    QMenu* changeCaseMenu_;
+
+    // 段落控件
+    QAction* alignLeftAction_;
+    QAction* alignCenterAction_;
+    QAction* alignRightAction_;
+    QAction* alignJustifyAction_;
+
+    PageView* editor_ = nullptr;
 };

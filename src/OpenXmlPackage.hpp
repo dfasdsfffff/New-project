@@ -22,7 +22,7 @@ public:
     //! 创建一个空白 OOXML 文档包（含最小必需的 XML 骨架）
     static OpenXmlPackage createBlankDocument();
 
-    void saveAs(const Path& path) const;
+    void saveAs(const Path& path, bool overwrite = true) const;
 
     [[nodiscard]] bool hasPart(std::string_view name) const;
     [[nodiscard]] XmlPart& xmlPart(std::string_view name);
