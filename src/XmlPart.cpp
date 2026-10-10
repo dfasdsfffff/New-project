@@ -4,6 +4,7 @@
 #include "cppwordkit/XmlPart.hpp"
 
 #include "Detail.hpp"
+#include "TextEditing.hpp"
 #include "cppwordkit/Error.hpp"
 
 #include <libxml/parser.h>
@@ -837,16 +838,18 @@ bool XmlPart::replaceWordTextWithXml(std::string_view search, std::string_view r
     return true;
 }
 
-// 设置指定 run 的文本样式（字体、颜色、大小、粗体/斜体等）
-// 每个属性对应 w:rPr 下的子元素，不存在则自动创建
-void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
-    auto* result = impl_->eval(runXPath(paragraphIndex, runIndex));
-    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
-    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
-        throw WordProcessingException("Run index is out of range");
+namespace {
+void applyRunStyleNode(xmlNodePtr run, const TextStyle& style) {
+    // 先校验整个补丁，避免先写入字体再因颜色非法而留下半次修改。
+    for (const auto* color : {&style.colorHex, &style.backgroundColorHex, &style.borderColorHex}) {
+        if (*color && !isHexColor(**color)) throw WordProcessingException("Text color must be a 6-digit RGB hex value");
     }
-
-    auto* run = result->nodesetval->nodeTab[0];
+    if (style.highlightColor && !isHighlightColor(*style.highlightColor))
+        throw WordProcessingException("Highlight color is not a supported Word highlight value");
+    if (style.fontSizeHalfPoints && *style.fontSizeHalfPoints <= 0)
+        throw WordProcessingException("Font size must be positive");
+    if (style.superscript.value_or(false) && style.subscript.value_or(false))
+        throw WordProcessingException("Superscript and subscript cannot both be enabled");
     auto* runProperties = ensureFirstChild(run, "rPr");
 
     if (style.fontFamily) {
@@ -924,6 +927,82 @@ void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, cons
         auto* emphasis = ensureChild(runProperties, "em");
         setWAttribute(emphasis, "val", *style.enclosedCircle ? "circle" : "none");
     }
+}
+
+} // namespace
+
+// 设置指定 run 的文本样式（字体、颜色、大小、粗体/斜体等）
+// 每个属性对应 w:rPr 下的子元素，不存在则自动创建
+void XmlPart::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style) {
+    auto* result = impl_->eval(runXPath(paragraphIndex, runIndex));
+    const auto cleanup = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(result, xmlXPathFreeObject);
+    if (result->nodesetval == nullptr || result->nodesetval->nodeNr == 0) {
+        throw WordProcessingException("Run index is out of range");
+    }
+
+    auto* run = result->nodesetval->nodeTab[0];
+    applyRunStyleNode(run, style);
+}
+
+namespace {
+xmlNodePtr editingParagraph(xmlXPathObjectPtr result) {
+    if (!result->nodesetval || result->nodesetval->nodeNr != 1) {
+        throw WordProcessingException("Paragraph index is out of range");
+    }
+    return result->nodesetval->nodeTab[0];
+}
+
+template<class Edit> void editParagraphAtomically(xmlNodePtr paragraph, Edit edit) {
+    // 在离线副本上拆分 Run 和应用样式，全部成功后只替换该段落。
+    auto copy = std::unique_ptr<xmlNode, decltype(&xmlFreeNode)>(
+        xmlDocCopyNode(paragraph, paragraph->doc, 1), xmlFreeNode);
+    if (!copy) throw WordProcessingException("Cannot copy paragraph for editing");
+    edit(copy.get());
+    if (xmlReplaceNode(paragraph, copy.get()) != paragraph) {
+        throw WordProcessingException("Cannot commit paragraph edit");
+    }
+    copy.release();
+    xmlFreeNode(paragraph);
+}
+}
+
+std::string XmlPart::paragraphText(std::size_t paragraphIndex) const {
+    const auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(paragraphXPath(paragraphIndex)), xmlXPathFreeObject);
+    return detail::paragraphEditingText(editingParagraph(result.get()));
+}
+
+void XmlPart::insertText(std::size_t paragraphIndex, std::size_t offset, std::string_view text) {
+    auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(paragraphXPath(paragraphIndex)), xmlXPathFreeObject);
+    auto* paragraph = editingParagraph(result.get());
+    // XPath 节点集析构会读取节点类型，必须在替换并释放节点之前销毁。
+    result.reset();
+    editParagraphAtomically(paragraph, [&](xmlNodePtr node) {
+        detail::insertParagraphText(node, offset, text);
+    });
+}
+
+void XmlPart::deleteRange(std::size_t paragraphIndex, std::size_t offset, std::size_t length) {
+    auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(paragraphXPath(paragraphIndex)), xmlXPathFreeObject);
+    auto* paragraph = editingParagraph(result.get());
+    // XPath 节点集析构会读取节点类型，必须在替换并释放节点之前销毁。
+    result.reset();
+    editParagraphAtomically(paragraph, [&](xmlNodePtr node) {
+        detail::deleteParagraphRange(node, offset, length);
+    });
+}
+
+void XmlPart::applyStyle(std::size_t paragraphIndex, std::size_t offset, std::size_t length, const TextStyle& style) {
+    auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+        impl_->eval(paragraphXPath(paragraphIndex)), xmlXPathFreeObject);
+    auto* paragraph = editingParagraph(result.get());
+    // XPath 节点集析构会读取节点类型，必须在替换并释放节点之前销毁。
+    result.reset();
+    editParagraphAtomically(paragraph, [&](xmlNodePtr node) {
+        detail::styleParagraphRange(node, offset, length, style, applyRunStyleNode);
+    });
 }
 
 TextStyle XmlPart::runStyle(std::size_t paragraphIndex, std::size_t runIndex) const {
@@ -1147,9 +1226,11 @@ xmlNodePtr editableElement(xmlXPathObjectPtr result) {
 }
 
 void XmlPart::replaceElementXml(std::string_view xpath, std::string_view elementXml) {
-    const auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+    auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
         impl_->eval(xpath), xmlXPathFreeObject);
     auto* node = editableElement(result.get());
+    // 释放匹配节点之前先释放持有该节点指针的 XPath 结果。
+    result.reset();
     auto replacement = std::unique_ptr<xmlNode, decltype(&xmlFreeNode)>(
         copyXmlFragmentRoot(elementXml, impl_->doc), xmlFreeNode);
     // 先解析并复制片段，失败时原节点保持不变。
@@ -1174,9 +1255,11 @@ void XmlPart::insertElementXmlBefore(std::string_view xpath, std::string_view el
 }
 
 void XmlPart::removeElement(std::string_view xpath) {
-    const auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
+    auto result = std::unique_ptr<xmlXPathObject, decltype(&xmlXPathFreeObject)>(
         impl_->eval(xpath), xmlXPathFreeObject);
     auto* node = editableElement(result.get());
+    // 释放匹配节点之前先释放持有该节点指针的 XPath 结果。
+    result.reset();
     xmlUnlinkNode(node);
     xmlFreeNode(node);
 }

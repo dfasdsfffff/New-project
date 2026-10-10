@@ -775,6 +775,22 @@ void WordDocument::setRunStyle(std::size_t paragraphIndex, std::size_t runIndex,
     mainDocumentPart().setRunStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), runIndex, style);
 }
 
+std::string WordDocument::paragraphText(std::size_t paragraphIndex) const {
+    return mainDocumentPart().paragraphText(xmlParagraphIndex(mainDocumentPart(), paragraphIndex));
+}
+
+void WordDocument::insertText(std::size_t paragraphIndex, std::size_t offset, std::string_view text) {
+    mainDocumentPart().insertText(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), offset, text);
+}
+
+void WordDocument::deleteRange(std::size_t paragraphIndex, std::size_t offset, std::size_t length) {
+    mainDocumentPart().deleteRange(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), offset, length);
+}
+
+void WordDocument::applyStyle(std::size_t paragraphIndex, std::size_t offset, std::size_t length, const TextStyle& style) {
+    mainDocumentPart().applyStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), offset, length, style);
+}
+
 TextStyle WordDocument::runStyle(std::size_t paragraphIndex, std::size_t runIndex) const {
     return mainDocumentPart().runStyle(xmlParagraphIndex(mainDocumentPart(), paragraphIndex), runIndex);
 }

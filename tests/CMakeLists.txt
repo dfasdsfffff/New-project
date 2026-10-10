@@ -22,3 +22,4 @@ cppwordkit_add_test(cppwordkit_word_tests WordDocumentTests.cpp CppWordKit::CppW
 cppwordkit_add_test(cppwordkit_template_tests TemplateTests.cpp CppWordKit::Tpl)
 cppwordkit_add_test(cppwordkit_save_tests SaveTests.cpp CppWordKit::Core)
 cppwordkit_add_test(cppwordkit_core_integrity_tests CoreIntegrityTests.cpp CppWordKit::Core)
+cppwordkit_add_test(cppwordkit_text_editing_tests TextEditingTests.cpp CppWordKit::Core)

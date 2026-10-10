@@ -61,6 +61,7 @@ add_library(CppWordKitCore
     src/OpenXmlPackage.cpp
     src/WordDocument.cpp
     src/XmlPart.cpp
+    src/TextEditing.cpp
     src/ZipArchive.cpp
 )
 

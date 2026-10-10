@@ -6,3 +6,6 @@ target_link_libraries(cppwordkit_replace_text PRIVATE CppWordKit::CppWordKit)
 
 add_executable(cppwordkit_fill_table fill_table.cpp)
 target_link_libraries(cppwordkit_fill_table PRIVATE CppWordKit::CppWordKit)
+
+add_executable(cppwordkit_edit_text edit_text.cpp)
+target_link_libraries(cppwordkit_edit_text PRIVATE CppWordKit::Core)

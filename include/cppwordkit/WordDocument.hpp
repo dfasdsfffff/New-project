@@ -79,6 +79,16 @@ public:
     void appendParagraph(const Paragraph& paragraph);
     void insertParagraph(std::size_t index, const Paragraph& paragraph);
     void removeParagraph(std::size_t index);
+    /// @brief 读取位置编辑使用的段落文本：tab 为 \t，软换行为 \n，对象为 U+FFFC
+    /// @details 段落索引为正文直属段落；域、修订等未支持结构会抛异常。
+    [[nodiscard]] std::string paragraphText(std::size_t paragraphIndex) const;
+    /// @brief 按 Unicode 标量偏移插入 UTF-8 文本，边界继承左侧 Run 格式和超链接归属
+    /// @details 偏移不是字节、UTF-16 或字素簇；CRLF/CR 归一为软换行。失败不修改文档。
+    void insertText(std::size_t paragraphIndex, std::size_t offset, std::string_view text);
+    /// @brief 删除单段内 [offset, offset + length) 文本，可跨 Run；不能包含嵌入对象
+    void deleteRange(std::size_t paragraphIndex, std::size_t offset, std::size_t length);
+    /// @brief 对单段内 Unicode 标量范围应用样式补丁，未设置的属性保留；失败不修改文档
+    void applyStyle(std::size_t paragraphIndex, std::size_t offset, std::size_t length, const TextStyle& style);
     void setRunStyle(std::size_t paragraphIndex, std::size_t runIndex, const TextStyle& style);
     [[nodiscard]] TextStyle runStyle(std::size_t paragraphIndex, std::size_t runIndex) const;
     void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);

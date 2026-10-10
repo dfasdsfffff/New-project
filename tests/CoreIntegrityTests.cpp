@@ -99,6 +99,13 @@ int main() {
         empty.insertParagraph(0, replacement);
         empty.appendParagraph(replacement);
         require(empty.paragraphCount() == 3, "insert without section properties failed");
+        // 重复替换/删除可暴露 XPath 结果集仍引用已释放节点的生命周期问题。
+        for (int i = 0; i < 300; ++i) {
+            empty.setParagraph(0, replacement);
+            empty.insertParagraph(0, replacement);
+            empty.removeParagraph(0);
+        }
+        require(empty.paragraphCount() == 3, "repeated local edits changed paragraph count");
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

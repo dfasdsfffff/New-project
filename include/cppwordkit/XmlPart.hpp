@@ -69,6 +69,14 @@ public:
     void setParagraphStyle(std::size_t paragraphIndex, const ParagraphStyle& style);
     /// @brief 读取指定段落的段落样式
     [[nodiscard]] ParagraphStyle paragraphStyle(std::size_t paragraphIndex) const;
+    /// @brief 底层位置编辑，段落索引包含本部件内所有 w:p；字符偏移为 Unicode 标量
+    [[nodiscard]] std::string paragraphText(std::size_t paragraphIndex) const;
+    /// @brief 在段落中插入 UTF-8 文本；事务性修改，不支持结构抛异常
+    void insertText(std::size_t paragraphIndex, std::size_t offset, std::string_view text);
+    /// @brief 删除单段内半开字符范围，不能包含嵌入对象
+    void deleteRange(std::size_t paragraphIndex, std::size_t offset, std::size_t length);
+    /// @brief 对单段内半开字符范围应用样式补丁
+    void applyStyle(std::size_t paragraphIndex, std::size_t offset, std::size_t length, const TextStyle& style);
 
     /// @brief 通过 XPath 设置单个节点的文本内容
     void setTextByXPath(std::string_view xpath, std::string_view value);
